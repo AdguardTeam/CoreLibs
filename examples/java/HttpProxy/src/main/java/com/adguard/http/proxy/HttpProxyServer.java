@@ -332,13 +332,17 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	public void onDisconnect(AsyncTcpConnectionEndpoint endpoint) {
 		log.debug("Endpoint {} disconnected", endpoint);
 		HttpProxyContext context = getContext(endpoint);
-		Direction direction = context.getDirection(endpoint);
-		parser.disconnect(context.getConnectionId(), direction);
+		if (!context.isClosed()) {
+			Direction direction = context.getDirection(endpoint);
+			parser.disconnect(context.getConnectionId(), direction);
 
-		if (direction == Direction.IN) {
-			getContext(endpoint).close();
+			if (direction == Direction.IN || context.isHttpConnectMode()) {
+				getContext(endpoint).close();
+			} else {
+				getContext(endpoint).removeRemoteEndpoint(endpoint);
+			}
 		} else {
-			getContext(endpoint).removeRemoteEndpoint(endpoint);
+			parser.close(context.getConnectionId());
 		}
 	}
 

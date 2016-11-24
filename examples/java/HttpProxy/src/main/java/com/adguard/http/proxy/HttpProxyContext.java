@@ -212,4 +212,8 @@ public class HttpProxyContext {
 			remoteEndpoints.clear();
 		}
 	}
+
+	public boolean isClosed() {
+		return localEndpoint == null;
+	}
 }
