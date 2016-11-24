@@ -25,7 +25,7 @@ public class HttpProxyContext {
 	private volatile boolean isChunked;
 	private ContentEncoding contentEncoding = ContentEncoding.IDENTITY;
 	private volatile boolean httpConnectMode = false;
-	private volatile Direction currentDirection = Direction.IN;
+	private volatile Direction currentDirection = Direction.OUT;
 
 	public HttpProxyContext(long connectionId, Selector selector, AsyncTcpConnectionEndpoint localEndpoint) {
 		this.connectionId = connectionId;
@@ -141,7 +141,7 @@ public class HttpProxyContext {
 			if (currentRemoteEndpoint != null) {
 				currentRemoteEndpoint.setReadTimeout(Constants.TUNNEL_READ_TIMEOUT_SECONDS);
 			}
-		} else if (currentDirection == Direction.IN) {
+		} else if (currentDirection == Direction.OUT) {
 			localEndpoint.setReadTimeout(Constants.KEEP_ALIVE_INTERVAL_SECONDS);
 			if (currentRemoteEndpoint != null) {
 				currentRemoteEndpoint.setReadTimeout(0L);
@@ -196,7 +196,7 @@ public class HttpProxyContext {
 	}
 
 	public Direction getDirection(AsyncTcpConnectionEndpoint endpoint) {
-		return localEndpoint.equals(endpoint) ? Direction.IN : Direction.OUT;
+		return localEndpoint.equals(endpoint) ? Direction.OUT : Direction.IN;
 	}
 
 	public void close() {

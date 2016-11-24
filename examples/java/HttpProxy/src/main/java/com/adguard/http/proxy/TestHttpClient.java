@@ -43,7 +43,7 @@ public class TestHttpClient {
 			buf.flip();
 			byte[] bytes = bufToBytes(buf);
 			log.info("received:\n" + new String(bytes, Charset.forName("ascii")));
-			r = parser.input(requestId, Direction.OUT, bytes);
+			r = parser.input(requestId, Direction.IN, bytes);
 			log.info("result: " + r);
 		}
 	}

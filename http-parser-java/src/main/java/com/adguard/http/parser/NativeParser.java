@@ -9,7 +9,7 @@ public class NativeParser implements Parser {
 		System.loadLibrary("httpparser");
 	}
 
-	// TODO: add ability to create multiple parsers (store address of parser-wide context)
+	// TODO: add ability to create multiple parsers (store native pointer of parser-wide context)
 
 	public static native synchronized int connect(long id, Callbacks callbacks);
 

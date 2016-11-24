@@ -289,12 +289,12 @@ int _on_body(http_parser *parser, const char *at, size_t length) {
         case HTTP_REQUEST:
             body_started = context->callbacks->http_request_body_started;
             body_data = context->callbacks->http_request_body_data;
-            direction = DIRECTION_IN;
+            direction = DIRECTION_OUT;
             break;
         case HTTP_RESPONSE:
             body_started = context->callbacks->http_response_body_started;
             body_data = context->callbacks->http_response_body_data;
-            direction = DIRECTION_OUT;
+            direction = DIRECTION_IN;
             break;
         default:
             return -1;

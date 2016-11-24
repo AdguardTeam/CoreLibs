@@ -87,7 +87,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		AsyncTcpConnectionEndpoint remoteEndpoint = setRemoteEndpoint(id, host);
 		sendRequest(remoteEndpoint, header);
 		if (!context.isChunked()) {
-			context.setCurrentDirection(Direction.OUT);
+			context.setCurrentDirection(Direction.IN);
 		}
 	}
 
@@ -119,7 +119,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	private void onHttpConnectReceived(long id, HttpMessage header) {
 		HttpProxyContext context = contexts.get(id);
 		setRemoteEndpoint(id, header.getUrl());
-		context.setCurrentDirection(Direction.OUT);
+		context.setCurrentDirection(Direction.IN);
 		context.setHttpConnectMode(true);
 	}
 
@@ -132,7 +132,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		if (responseBody != null) {
 			endpoint.write(responseBody);
 		}
-		getContext(endpoint).setCurrentDirection(Direction.IN);
+		getContext(endpoint).setCurrentDirection(Direction.OUT);
 	}
 
 	private HttpMessage createErrorResponse(int statusCode, String status, Throwable t) {
@@ -204,7 +204,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	public void onHttpRequestBodyFinished(long id) {
 		HttpProxyContext context = contexts.get(id);
 		writeLastChunk(context, context.getCurrentRemoteEndpoint());
-		context.setCurrentDirection(Direction.OUT);
+		context.setCurrentDirection(Direction.IN);
 	}
 
 	@Override
@@ -256,7 +256,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	public void onParseError(long id, Direction direction, int type, String message) {
 		log.warn("Parse error {} {}", type, message);
 		HttpProxyContext context = contexts.get(id);
-		if (direction == Direction.IN) {
+		if (direction == Direction.OUT) {
 			sendBadRequestResponseAndClose(context.getLocalEndpoint());
 		} else {
 			context.getCurrentRemoteEndpoint().close();
@@ -336,7 +336,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 			Direction direction = context.getDirection(endpoint);
 			parser.disconnect(context.getConnectionId(), direction);
 
-			if (direction == Direction.IN || context.isHttpConnectMode()) {
+			if (direction == Direction.OUT || context.isHttpConnectMode()) {
 				getContext(endpoint).close();
 			} else {
 				getContext(endpoint).removeRemoteEndpoint(endpoint);
@@ -356,7 +356,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		}
 
 		HttpProxyContext context = getContext(endpoint);
-		if (context.getCurrentDirection() == Direction.OUT) {
+		if (context.getCurrentDirection() == Direction.IN) {
 			AsyncTcpConnectionEndpoint anotherEndpoint = context.getOpposingEndpoint(endpoint);
 			if (anotherEndpoint != null && anotherEndpoint.equals(context.getLocalEndpoint())) {
 				if (t instanceof TimeoutException) {
@@ -373,7 +373,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 			getContext(endpoint).setHttpConnectMode(false);
 		}
 
-		context.setCurrentDirection(Direction.IN);
+		context.setCurrentDirection(Direction.OUT);
 	}
 
 	private AsyncTcpConnectionEndpoint setRemoteEndpoint(long connectionId, String host) {

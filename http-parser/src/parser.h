@@ -46,12 +46,12 @@ typedef struct {
 
 /**
  * Transfer direction
- * IN - Local client request
- * OUT - Remote server response
+ * IN - Data from remote server
+ * OUT - Data from client
  */
 enum transfer_direction {
-    DIRECTION_IN                 = 0,
-    DIRECTION_OUT                = 1
+    DIRECTION_IN = 0,
+    DIRECTION_OUT
 };
 typedef enum transfer_direction transfer_direction;
 

@@ -7,14 +7,14 @@ import java.util.Map;
  */
 public class HttpMessage {
 
-	private long address;
+	private long nativePtr;
 
-	public HttpMessage(long address) {
-		this.address = address;
+	public HttpMessage(long nativePtr) {
+		this.nativePtr = nativePtr;
 	}
 
 	public HttpMessage() {
-		this.address = createHttpMessage();
+		this.nativePtr = createHttpMessage();
 	}
 
 	private static native long createHttpMessage();
@@ -25,13 +25,13 @@ public class HttpMessage {
 		if (key == null || value == null) {
 			throw new NullPointerException();
 		}
-		addHeader(address, key, value);
+		addHeader(nativePtr, key, value);
 	}
 
 	private static native long[] getHeaders(long address);
 
 	private HttpHeaderField[] getHeaders() {
-		long[] headerAddresses = getHeaders(address);
+		long[] headerAddresses = getHeaders(nativePtr);
 		HttpHeaderField[] headerFields = new HttpHeaderField[headerAddresses.length];
 		for (int i = 0; i < headerAddresses.length; i++) {
 			headerFields[i] = new HttpHeaderField(headerAddresses[i]);
@@ -52,19 +52,19 @@ public class HttpMessage {
 	private static native void removeHeader(long address, String name);
 
 	public void removeHeader(String name) {
-		removeHeader(address, name);
+		removeHeader(nativePtr, name);
 	}
 
 	private static native String getMethod(long address);
 
 	public String getMethod() {
-		return getMethod(address);
+		return getMethod(nativePtr);
 	}
 
 	private static native String getUrl(long address);
 
 	public String getUrl() {
-		return getUrl(address);
+		return getUrl(nativePtr);
 	}
 
 	private static native void setUrl(long address, String url);
@@ -73,37 +73,37 @@ public class HttpMessage {
 			if (url == null) {
 			throw new NullPointerException();
 		}
-		setUrl(address, url);
+		setUrl(nativePtr, url);
 	}
 
 	private static native String getStatus(long address);
 
 	public String getStatus() {
-		return getStatus(address);
+		return getStatus(nativePtr);
 	}
 
 	private static native int getStatusCode(long address);
 
 	public int getStatusCode() {
-		return getStatusCode(address);
+		return getStatusCode(nativePtr);
 	}
 
 	private static native int sizeBytes(long address);
 
 	public int sizeBytes() {
-		return sizeBytes(address);
+		return sizeBytes(nativePtr);
 	}
 
 	private static native byte[] getBytes(long address);
 
 	public byte[] getBytes() {
-		return getBytes(address);
+		return getBytes(nativePtr);
 	}
 
 	private static native void getBytes(long address, byte[] destination);
 
 	public void getBytes(byte[] destination) {
-		getBytes(address, destination);
+		getBytes(nativePtr, destination);
 	}
 
 	@Override
@@ -114,46 +114,46 @@ public class HttpMessage {
 	private static native long clone(long address);
 
 	public HttpMessage cloneHeader() {
-		return new HttpMessage(clone(address));
+		return new HttpMessage(clone(nativePtr));
 	}
 
 	private static native void free(long address);
 
 	public void free() {
-		free(address);
+		free(nativePtr);
 	}
 
 	private static native void setStatusCode(long address, int code);
 
 	public void setStatusCode(int code) {
-		setStatusCode(address, code);
+		setStatusCode(nativePtr, code);
 	}
 
 	private static native void setStatus(long address, String status);
 
 	public void setStatus(String status) {
-		setStatus(address, status);
+		setStatus(nativePtr, status);
 	}
 
 	private static class HttpHeaderField implements Map.Entry<String, String> {
-		long address;
+		long nativePtr;
 
-		HttpHeaderField(long address) {
-			this.address = address;
+		HttpHeaderField(long nativePtr) {
+			this.nativePtr = nativePtr;
 		}
 
 		private static native String getKey(long address);
 
 		@Override
 		public String getKey() {
-			return getKey(address);
+			return getKey(nativePtr);
 		}
 
 		private static native String getValue(long address);
 
 		@Override
 		public String getValue() {
-			return getValue(address);
+			return getValue(nativePtr);
 		}
 
 		@Override

@@ -191,7 +191,7 @@ jint Java_com_adguard_http_parser_NativeParser_disconnect0(JNIEnv *env, jclass c
                                                           jint direction) {
     ParserContext *context = context_map[id];
     parser_disconnect(id, (transfer_direction) direction);
-    if (direction == DIRECTION_IN) {
+    if (direction == DIRECTION_OUT) {
         // delete context;
     }
     return 0;
