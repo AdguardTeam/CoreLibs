@@ -14,11 +14,11 @@ OBJS = parser.o ../../http-parser/libhttpparser-c.a
 all: libhttpparser.jnilib
 
 ../../http-parser/libhttpparser-c.a:
-	$(MAKE) -C ../../http-parser libhttpparser-c.a
+	$(MAKE) -C ../../http-parser -f Makefile.simple libhttpparser-c.a
 
 libhttpparser.jnilib: $(OBJS)
 	$(CXX) $(LDFLAGS) -dynamiclib -o libhttpparser.jnilib $(OBJS)
 
 clean:
 	$(RM) libhttpparser.jnilib $(OBJS)
-	$(MAKE) -C ../../http-parser clean
+	$(MAKE) -C ../../http-parser -f Makefile.simple clean
