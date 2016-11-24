@@ -305,13 +305,13 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		endpoint.write(chunkFooter.getBytes());
 	}
 
-	private static String stripHostFromRequestUrl(HttpMessage header) {
+	static String stripHostFromRequestUrl(HttpMessage header) {
 		// TODO: do it in native code
 		try {
 			String s = header.getUrl();
 			URI uri = new URI(s);
 			if (uri.getPath() != null) {
-				header.setUrl(uri.getPath());
+				header.setUrl(uri.getRawPath() + (uri.getRawQuery() != null ? "?" + uri.getRawQuery() : ""));
 			}
 			return uri.getHost();
 		} catch (URISyntaxException e) {
