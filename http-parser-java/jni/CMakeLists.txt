@@ -9,12 +9,11 @@ find_package(JNI REQUIRED)
 include_directories(${JAVA_INCLUDE_PATH})
 
 set(SOURCE_FILES
-    com_adguard_http_parser_HttpMessage.h
-    com_adguard_http_parser_HttpMessage_HttpHeaderField.h
-    com_adguard_http_parser_NativeParser.h
-    com_adguard_http_parser_NativeParser_Callbacks.h
-    parser.cpp
-        )
+        com_adguard_http_parser_HttpMessage.h
+        com_adguard_http_parser_HttpMessage_HttpHeaderField.h
+        com_adguard_http_parser_NativeParser.h
+        com_adguard_http_parser_NativeParser_Callbacks.h
+        parser.cpp)
 
 
 add_library(httpparser-jni SHARED ${SOURCE_FILES})
