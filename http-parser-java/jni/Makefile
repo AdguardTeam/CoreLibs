@@ -9,12 +9,16 @@ CXXFLAGS += $(LOCAL_CXXFLAGS)
 CXXFLAGS+=-fPIC -Wall -g3 -ggdb
 CFLAGS+=-fPIC -Wall -g3 -ggdb
 
-OBJS = parser.o ../../http-parser/src/parser.o ../../http-parser/src/nodejs_http_parser/http_parser.o
+OBJS = parser.o ../../http-parser/libhttpparser-c.a
 
 all: libhttpparser.so
+
+../../http-parser/libhttpparser-c.a:
+	$(MAKE) -C ../../http-parser libhttpparser-c.a
 
 libhttpparser.so: $(OBJS)
 	$(CXX) $(LDFLAGS) -shared -o libhttpparser.so $(OBJS)
 
 clean:
 	$(RM) libhttpparser.so $(OBJS)
+	$(MAKE) -C ../../http-parser clean

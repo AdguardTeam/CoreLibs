@@ -8,12 +8,17 @@ CXXFLAGS += $(LOCAL_CXXFLAGS)
 
 CXXFLAGS+=-fPIC
 CFLAGS+=-fPIC
-OBJS = parser.o parser/src/parser.o parser/src/nodejs_http_parser/http_parser.o
+
+OBJS = parser.o ../../http-parser/libhttpparser-c.a
 
 all: libhttpparser.jnilib
+
+../../http-parser/libhttpparser-c.a:
+	$(MAKE) -C ../../http-parser libhttpparser-c.a
 
 libhttpparser.jnilib: $(OBJS)
 	$(CXX) $(LDFLAGS) -dynamiclib -o libhttpparser.jnilib $(OBJS)
 
 clean:
 	$(RM) libhttpparser.jnilib $(OBJS)
+	$(MAKE) -C ../../http-parser clean
