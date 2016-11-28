@@ -19,7 +19,7 @@ public class HttpMessage {
 
 	private static native long createHttpMessage();
 
-	public static native void addHeader(long address, String key, String value);
+	public static native void addHeader(long nativePtr, String key, String value);
 
 	public void addHeader(String key, String value) {
 		if (key == null || value == null) {
@@ -28,13 +28,13 @@ public class HttpMessage {
 		addHeader(nativePtr, key, value);
 	}
 
-	private static native long[] getHeaders(long address);
+	private static native long[] getHeaders(long nativePtr);
 
 	private HttpHeaderField[] getHeaders() {
-		long[] headerAddresses = getHeaders(nativePtr);
-		HttpHeaderField[] headerFields = new HttpHeaderField[headerAddresses.length];
-		for (int i = 0; i < headerAddresses.length; i++) {
-			headerFields[i] = new HttpHeaderField(headerAddresses[i]);
+		long[] headerNativePtrs = getHeaders(nativePtr);
+		HttpHeaderField[] headerFields = new HttpHeaderField[headerNativePtrs.length];
+		for (int i = 0; i < headerNativePtrs.length; i++) {
+			headerFields[i] = new HttpHeaderField(headerNativePtrs[i]);
 		}
 		return headerFields;
 	}
@@ -49,25 +49,25 @@ public class HttpMessage {
 		return null;
 	}
 
-	private static native void removeHeader(long address, String name);
+	private static native void removeHeader(long nativePtr, String name);
 
 	public void removeHeader(String name) {
 		removeHeader(nativePtr, name);
 	}
 
-	private static native String getMethod(long address);
+	private static native String getMethod(long nativePtr);
 
 	public String getMethod() {
 		return getMethod(nativePtr);
 	}
 
-	private static native String getUrl(long address);
+	private static native String getUrl(long nativePtr);
 
 	public String getUrl() {
 		return getUrl(nativePtr);
 	}
 
-	private static native void setUrl(long address, String url);
+	private static native void setUrl(long nativePtr, String url);
 
 	public void setUrl(String url) {
 			if (url == null) {
@@ -76,31 +76,31 @@ public class HttpMessage {
 		setUrl(nativePtr, url);
 	}
 
-	private static native String getStatus(long address);
+	private static native String getStatus(long nativePtr);
 
 	public String getStatus() {
 		return getStatus(nativePtr);
 	}
 
-	private static native int getStatusCode(long address);
+	private static native int getStatusCode(long nativePtr);
 
 	public int getStatusCode() {
 		return getStatusCode(nativePtr);
 	}
 
-	private static native int sizeBytes(long address);
+	private static native int sizeBytes(long nativePtr);
 
 	public int sizeBytes() {
 		return sizeBytes(nativePtr);
 	}
 
-	private static native byte[] getBytes(long address);
+	private static native byte[] getBytes(long nativePtr);
 
 	public byte[] getBytes() {
 		return getBytes(nativePtr);
 	}
 
-	private static native void getBytes(long address, byte[] destination);
+	private static native void getBytes(long nativePtr, byte[] destination);
 
 	public void getBytes(byte[] destination) {
 		getBytes(nativePtr, destination);
@@ -111,25 +111,25 @@ public class HttpMessage {
 		return "HttpMessage{" + new String(getBytes()) + "}";
 	}
 
-	private static native long clone(long address);
+	private static native long clone(long nativePtr);
 
 	public HttpMessage cloneHeader() {
 		return new HttpMessage(clone(nativePtr));
 	}
 
-	private static native void free(long address);
+	private static native void free(long nativePtr);
 
 	public void free() {
 		free(nativePtr);
 	}
 
-	private static native void setStatusCode(long address, int code);
+	private static native void setStatusCode(long nativePtr, int code);
 
 	public void setStatusCode(int code) {
 		setStatusCode(nativePtr, code);
 	}
 
-	private static native void setStatus(long address, String status);
+	private static native void setStatus(long nativePtr, String status);
 
 	public void setStatus(String status) {
 		setStatus(nativePtr, status);
@@ -142,14 +142,14 @@ public class HttpMessage {
 			this.nativePtr = nativePtr;
 		}
 
-		private static native String getKey(long address);
+		private static native String getKey(long nativePtr);
 
 		@Override
 		public String getKey() {
 			return getKey(nativePtr);
 		}
 
-		private static native String getValue(long address);
+		private static native String getValue(long nativePtr);
 
 		@Override
 		public String getValue() {

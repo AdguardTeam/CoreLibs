@@ -42,8 +42,8 @@ public class NativeParser implements Parser {
 			this.callbacks = callbacks;
 		}
 
-		int onHttpRequestReceived(long id, long address) {
-			callbacks.onHttpRequestReceived(id, new HttpMessage(address));
+		int onHttpRequestReceived(long id, long nativePtr) {
+			callbacks.onHttpRequestReceived(id, new HttpMessage(nativePtr));
 			return 0;
 		}
 
@@ -60,8 +60,8 @@ public class NativeParser implements Parser {
 			callbacks.onHttpRequestBodyFinished(id);
 		}
 
-		int onHttpResponseReceived(long id, long headerAddress) {
-			callbacks.onHttpResponseReceived(id, new HttpMessage(headerAddress));
+		int onHttpResponseReceived(long id, long nativePtr) {
+			callbacks.onHttpResponseReceived(id, new HttpMessage(nativePtr));
 			return 0;
 		}
 
