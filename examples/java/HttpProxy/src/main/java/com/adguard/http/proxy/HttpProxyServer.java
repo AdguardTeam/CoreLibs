@@ -280,8 +280,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	private void writeLastChunk(HttpProxyContext context, AsyncTcpConnectionEndpoint destination) {
 		try {
 			if (context.isChunked()) {
-				writeChunk(context.getLocalEndpoint(), EMPTY_CHUNK_DATA);
-
+				writeChunk(destination, EMPTY_CHUNK_DATA);
 			}
 		} catch (ClosedChannelException ignored) {
 

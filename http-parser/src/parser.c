@@ -54,6 +54,7 @@
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 
+
 static inline void create_http_message(http_message **message) {
     *message = malloc(sizeof(http_message));
     memset(*message, 0, sizeof(http_message));
@@ -126,7 +127,7 @@ typedef enum {
  *  Private stuff:
  */
 typedef struct connection_context {
-    connection_id           id;
+    connection_id_t           id;
     connection_info         *info;
     parser_callbacks        *callbacks;
     http_parser             *parser;
@@ -143,11 +144,11 @@ typedef struct connection_context {
     TAILQ_ENTRY(connection_context) context_by_id_entry;
 } connection_context;
 
-typedef void (*body_data_callback)(connection_id, const char*, size_t);
+typedef void (*body_data_callback)(connection_id_t, const char*, size_t);
 static int message_inflate_init(connection_context *context, content_encoding encoding);
 static int message_inflate(connection_context *context, const char *data, size_t length, body_data_callback body_data);
 static int message_inflate_end(connection_context *context);
-static void throw_error(connection_context *context, transfer_direction direction, error_type type, const char *msg);
+static void throw_error(connection_context *context, transfer_direction_t direction, error_type_t type, const char *msg);
 
 /*
  *  Node.js http_parser's callbacks (parser->settings):
@@ -171,7 +172,7 @@ static void context_by_id_init() {
     }
 }
 
-static connection_context *context_by_id_get(connection_id id) {
+static connection_context *context_by_id_get(connection_id_t id) {
     if (!context_by_id_hash_initialized) {
         context_by_id_init();
         context_by_id_hash_initialized = 1;
@@ -189,7 +190,7 @@ static void context_by_id_add(connection_context *context) {
     TAILQ_INSERT_HEAD(&context_by_id_hash[context->id % HASH_SIZE], context, context_by_id_entry);
 }
 
-static connection_context *context_by_id_remove(connection_id id) {
+static connection_context *context_by_id_remove(connection_id_t id) {
     struct connection_context *context;
     TAILQ_FOREACH(context, &context_by_id_hash[id % HASH_SIZE], context_by_id_entry) {
         if (context->id == id) {
@@ -203,14 +204,14 @@ static connection_context *context_by_id_remove(connection_id id) {
 /*
  *  Internal callbacks:
  */
-int _on_message_begin(http_parser *parser) {
+int http_parser_on_message_begin(http_parser *parser) {
     DBG_HTTP_CALLBACK
     connection_context *context = CONTEXT(parser);
     create_http_message(&context->message);
     return 0;
 }
 
-int _on_url(http_parser *parser, const char *at, size_t length) {
+int http_parser_on_url(http_parser *parser, const char *at, size_t length) {
     DBG_HTTP_CALLBACK_DATA
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
@@ -220,7 +221,7 @@ int _on_url(http_parser *parser, const char *at, size_t length) {
     return 0;
 }
 
-int _on_status(http_parser *parser, const char *at, size_t length) {
+int http_parser_on_status(http_parser *parser, const char *at, size_t length) {
     DBG_HTTP_CALLBACK_DATA
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
@@ -231,7 +232,7 @@ int _on_status(http_parser *parser, const char *at, size_t length) {
     return 0;
 }
 
-int _on_header_field(http_parser *parser, const char *at, size_t length) {
+int http_parser_on_header_field(http_parser *parser, const char *at, size_t length) {
     DBG_HTTP_CALLBACK
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
@@ -245,7 +246,7 @@ int _on_header_field(http_parser *parser, const char *at, size_t length) {
     return 0;
 }
 
-int _on_header_value(http_parser *parser, const char *at, size_t length) {
+int http_parser_on_header_value(http_parser *parser, const char *at, size_t length) {
     DBG_HTTP_CALLBACK
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
@@ -258,7 +259,7 @@ int _on_header_value(http_parser *parser, const char *at, size_t length) {
     return 0;
 }
 
-int _on_headers_complete(http_parser *parser) {
+int http_parser_on_headers_complete(http_parser *parser) {
     DBG_HTTP_CALLBACK
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
@@ -278,13 +279,13 @@ int _on_headers_complete(http_parser *parser) {
     return skip;
 }
 
-int _on_body(http_parser *parser, const char *at, size_t length) {
+int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
     DBG_HTTP_CALLBACK_DATA
     connection_context *context = CONTEXT(parser);
     context->have_body = 1;
-    int (*body_started)(connection_id);
+    int (*body_started)(connection_id_t);
     body_data_callback body_data;
-    transfer_direction direction;
+    transfer_direction_t direction;
     switch (parser->type) {
         case HTTP_REQUEST:
             body_started = context->callbacks->http_request_body_started;
@@ -320,7 +321,7 @@ int _on_body(http_parser *parser, const char *at, size_t length) {
     return 0;
 }
 
-static void throw_error(connection_context *context, transfer_direction direction, error_type type, const char *msg) {
+static void throw_error(connection_context *context, transfer_direction_t direction, error_type_t type, const char *msg) {
     char error_message[256];
     snprintf(context->error_message, 256, "%s", msg);
     context->callbacks->parse_error(context->id, direction, type, error_message);
@@ -405,7 +406,7 @@ static int message_inflate_end(connection_context *context) {
     return result;
 }
 
-int _on_message_complete(http_parser *parser) {
+int http_parser_on_message_complete(http_parser *parser) {
     DBG_HTTP_CALLBACK
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
@@ -438,13 +439,13 @@ int _on_message_complete(http_parser *parser) {
     return 0;
 }
 
-int _on_chunk_header(http_parser *parser) {
+int http_parser_on_chunk_header(http_parser *parser) {
     DBG_HTTP_CALLBACK
     // ignore
     return 0;
 }
 
-int _on_chunk_complete(http_parser *parser) {
+int http_parser_on_chunk_complete(http_parser *parser) {
     DBG_HTTP_CALLBACK
     // ignore
     return 0;
@@ -452,22 +453,22 @@ int _on_chunk_complete(http_parser *parser) {
 
 
 http_parser_settings _settings = {
-    .on_message_begin       = _on_message_begin,
-    .on_url                 = _on_url,
-    .on_status              = _on_status,
-    .on_header_field        = _on_header_field,
-    .on_header_value        = _on_header_value,
-    .on_headers_complete    = _on_headers_complete,
-    .on_body                = _on_body,
-    .on_message_complete    = _on_message_complete,
-    .on_chunk_header        = _on_chunk_header,
-    .on_chunk_complete      = _on_chunk_complete
+    .on_message_begin       = http_parser_on_message_begin,
+    .on_url                 = http_parser_on_url,
+    .on_status              = http_parser_on_status,
+    .on_header_field        = http_parser_on_header_field,
+    .on_header_value        = http_parser_on_header_value,
+    .on_headers_complete    = http_parser_on_headers_complete,
+    .on_body                = http_parser_on_body,
+    .on_message_complete    = http_parser_on_message_complete,
+    .on_chunk_header        = http_parser_on_chunk_header,
+    .on_chunk_complete      = http_parser_on_chunk_complete
 };
 
 /*
  *  API implementaion:
  */
-int parser_connect(connection_id id, connection_info *info,
+int parser_connect(connection_id_t id, connection_info *info,
             parser_callbacks *callbacks) {
     connection_context *context = context_by_id_get(id);
     if (context != NULL) {
@@ -494,7 +495,7 @@ int parser_connect(connection_id id, connection_info *info,
     return 0;
 }
 
-int parser_disconnect(connection_id id, transfer_direction direction) {
+int parser_disconnect(connection_id_t id, transfer_direction_t direction) {
     // connection_context *context = context_by_id_remove(id);
     // TODO: free context structures
     return 0;
@@ -502,7 +503,7 @@ int parser_disconnect(connection_id id, transfer_direction direction) {
 
 #define INPUT_LENGTH_AT_ERROR 1
 
-int parser_input(connection_id id, transfer_direction direction, const char *data,
+int parser_input(connection_id_t id, transfer_direction_t direction, const char *data,
           size_t length) {
     connection_context *context = context_by_id_get(id);
     if (context == NULL) {
@@ -533,7 +534,7 @@ int parser_input(connection_id id, transfer_direction direction, const char *dat
     return 0;
 }
 
-int parser_connection_close(connection_id id) {
+int parser_connection_close(connection_id_t id) {
     connection_context *context = context_by_id_remove(id);
     return 0;
 }
