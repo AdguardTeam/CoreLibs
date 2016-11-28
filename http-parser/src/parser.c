@@ -10,6 +10,7 @@
 
 #include "nodejs_http_parser/http_parser.h"
 #include "parser.h"
+#include "logger.h"
 
 #include "../zlib/zlib.h"
 
@@ -49,17 +50,21 @@
 #define DBG_LINE do { fprintf(stderr, __FUNCTION__ ":%d\n", __LINE__); } while(0)
 
 /*
- *  Goods:
+ * Utility functions
  */
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-#define MAX(a,b) ((a) > (b) ? (a) : (b))
-
-
+/**
+ * Create HTTP message
+ * @param message Pointer to variable where pointer to newly allocated message will be placed
+ */
 static inline void create_http_message(http_message **message) {
     *message = malloc(sizeof(http_message));
     memset(*message, 0, sizeof(http_message));
 }
 
+/**
+ * Destroy HTTP message, including its state and field variables
+ * @param message Pointer to HTTP message
+ */
 static void destroy_http_message(http_message *message) {
     free(message->url);
     free(message->status);
@@ -72,21 +77,35 @@ static void destroy_http_message(http_message *message) {
     free(message);
 }
 
+/**
+ * External interface for destroy_http_message()
+ * @param message Pointer to HTTP message
+ */
 void http_message_free(http_message *message) {
     destroy_http_message(message);
 }
 
-static void add_http_header_param(http_message *header) {
-    header->field_count++;
-    if (header->fields == NULL) {
-        header->fields = malloc(sizeof(http_header_field));
-        memset(header->fields, 0, sizeof(http_header_field));
+/**
+ * Allocates place for next HTTP header parameter
+ * @param message Pointer to HTTP message
+ */
+static void add_http_header_param(http_message *message) {
+    message->field_count++;
+    if (message->fields == NULL) {
+        message->fields = malloc(sizeof(http_header_field));
+        memset(message->fields, 0, sizeof(http_header_field));
     } else {
-        header->fields = realloc(header->fields, header->field_count * sizeof(http_header_field));
-        memset(&header->fields[header->field_count - 1], 0, sizeof(http_header_field));
+        message->fields = realloc(message->fields, message->field_count * sizeof(http_header_field));
+        memset(&message->fields[message->field_count - 1], 0, sizeof(http_header_field));
     }
 }
 
+/**
+ * Appends chars from character array `src' to null-terminated string `dst'
+ * @param dst Pointer to null-terminated string (may be reallocated)
+ * @param src Character array
+ * @param len Length of character array
+ */
 static inline void append_chars(char **dst, const char *src, size_t len) {
     size_t old_len;
     if (*dst == NULL) {
@@ -101,6 +120,14 @@ static inline void append_chars(char **dst, const char *src, size_t len) {
     (*dst)[old_len + len] = 0;
 }
 
+/**
+ * Appends bytes from character array `src' to character array `dst'
+ * `dst' may contain null bytes.
+ * @param dst Pointer to character array (may be reallocated)
+ * @param dst_len Pointer to variable that contains length on `dst' array
+ * @param src Character array
+ * @param len Length of character array
+ */
 static inline void append_bytes(char **dst, size_t *dst_len, const char *src, size_t len) {
     if (*dst == NULL) {
         *dst_len = 0;
@@ -111,43 +138,101 @@ static inline void append_bytes(char **dst, size_t *dst_len, const char *src, si
     *dst_len += len;
 }
 
+/**
+ * Copy characters from `src' characted array to dst null-terminated string
+ * @param dst Pointer to null-terminated string (may be reallocated)
+ * @param src Character array
+ * @param len Length of character array
+ */
 static inline void set_chars(char **dst, const char *src, size_t len) {
     *dst = realloc(*dst, len + 1);
     memcpy(*dst, src, len);
     (*dst)[len] = 0;
 }
 
+/**
+ * Content-Encoding enum type.
+ * Encoding supported by this library - `identity', `deflate' and `gzip'
+ */
 typedef enum {
     CONTENT_ENCODING_IDENTITY = 0,
     CONTENT_ENCODING_DEFLATE = 1,
     CONTENT_ENCODING_GZIP = 2
-} content_encoding;
+} content_encoding_t;
 
 /*
- *  Private stuff:
+ * Connection context structure
  */
-typedef struct connection_context {
-    connection_id_t           id;
+typedef struct connection_context { /* structure has name for queue.h macros */
+    // Connection id
+    connection_id_t         id;
+    // Connection info (endpoint names), not used by any current language bindings
     connection_info         *info;
+    // Parser callbacks
     parser_callbacks        *callbacks;
+    // Pointer to Node.js http_parser implementation
     http_parser             *parser;
+    // Pointer to parser settings
     http_parser_settings    *settings;
+    // Pointer to message which is currently being constructed
     http_message             *message;
+
+    // State flags:
+    // Message construction is done
     size_t                  done;
+    // We are currently in field (after retrieveing field name and before reteiving field value)
     unsigned int            in_field;
+    /* Flag if message have body (Content-length is more than zero, body can yet be empty if
+     * consists to one empty chunk)
+     */
     unsigned int            have_body;
+    // We are currently in body and body decoding started (if message body needs any kind of decoding)
     unsigned int            body_started;
-    unsigned int            content_encoding;
+    // Content-Encoding of body - identity (no decoding), deflate, gzip. Returned by on_body_started callback.
+    content_encoding_t      content_encoding;
+    // Zlib decode buffer. Contains tail on previous input buffer which can't be processed right now
     char                    *decode_buffer;
+    // Zlib stream
     z_stream                zlib_stream;
+    // Current error message
     char                    error_message[256];
+    // Content-by-id hashmap entry (queue.h based)
+    // TODO: may be it is better to use klib/khash instead
     TAILQ_ENTRY(connection_context) context_by_id_entry;
 } connection_context;
 
+/*
+ * Functions for body decompression.
+ * Since decompression of one chunk of data may result on more than one output chunk, passing callback is needed.
+ */
+/*
+ * Body data callback. Usually it is parser_callbacks.http_request_body_data()
+ */
 typedef void (*body_data_callback)(connection_id_t, const char*, size_t);
-static int message_inflate_init(connection_context *context, content_encoding encoding);
+/*
+ * Initializes zlib stream for current HTTP message body.
+ * Used internally by http_parser_on_body().
+ */
+static int message_inflate_init(connection_context *context, content_encoding_t encoding);
+/*
+ * Inflate current input buffer and call body_data_callback for each decompressed chunk
+ */
 static int message_inflate(connection_context *context, const char *data, size_t length, body_data_callback body_data);
+/*
+ * Deinitializes zlib stream for current HTTP message body.
+ */
 static int message_inflate_end(connection_context *context);
+
+/*
+ * Other utility functions.
+ */
+/**
+ * Throw an error for current connection context. It calls parse_error callback with given error type and message
+ * @param context Connection context
+ * @param direction Transfer direction
+ * @param type Error type: HTTP or DECODE (zlib error).
+ * @param msg Error message (may be null or empty)
+ */
 static void throw_error(connection_context *context, transfer_direction_t direction, error_type_t type, const char *msg);
 
 /*
@@ -158,11 +243,12 @@ static void throw_error(connection_context *context, transfer_direction_t direct
 #define CONTEXT(parser)         ((connection_context*)parser->data)
 
 /**
- * Context by id hashmap
+ * Context by id hash map implementation
  */
 #define HASH_SIZE 63
 
-static TAILQ_HEAD(context_by_id, connection_context) context_by_id_hash[HASH_SIZE];
+TAILQ_HEAD(context_by_id, connection_context);
+static struct context_by_id context_by_id_hash[HASH_SIZE];
 
 static int context_by_id_hash_initialized = 0;
 
@@ -205,6 +291,7 @@ static connection_context *context_by_id_remove(connection_id_t id) {
  *  Internal callbacks:
  */
 int http_parser_on_message_begin(http_parser *parser) {
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_message_begin(parser=%p)", parser);
     DBG_HTTP_CALLBACK
     connection_context *context = CONTEXT(parser);
     create_http_message(&context->message);
@@ -212,7 +299,7 @@ int http_parser_on_message_begin(http_parser *parser) {
 }
 
 int http_parser_on_url(http_parser *parser, const char *at, size_t length) {
-    DBG_HTTP_CALLBACK_DATA
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_url(parser=%p, at=%.*s)", parser, (int) length, at);
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
     if (at != NULL && length > 0) {
@@ -222,7 +309,7 @@ int http_parser_on_url(http_parser *parser, const char *at, size_t length) {
 }
 
 int http_parser_on_status(http_parser *parser, const char *at, size_t length) {
-    DBG_HTTP_CALLBACK_DATA
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_status(parser=%p, at=%.*s)", parser, (int) length, at);
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
     if (at != NULL && length > 0) {
@@ -233,7 +320,7 @@ int http_parser_on_status(http_parser *parser, const char *at, size_t length) {
 }
 
 int http_parser_on_header_field(http_parser *parser, const char *at, size_t length) {
-    DBG_HTTP_CALLBACK
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_header_field(parser=%p, at=%.*s)", parser, (int) length, at);
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
     if (at != NULL && length > 0) {
@@ -247,7 +334,7 @@ int http_parser_on_header_field(http_parser *parser, const char *at, size_t leng
 }
 
 int http_parser_on_header_value(http_parser *parser, const char *at, size_t length) {
-    DBG_HTTP_CALLBACK
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_header_value(parser=%p, at=%.*s)", parser, (int) length, at);
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
     context->in_field = 0;
@@ -260,7 +347,7 @@ int http_parser_on_header_value(http_parser *parser, const char *at, size_t leng
 }
 
 int http_parser_on_headers_complete(http_parser *parser) {
-    DBG_HTTP_CALLBACK
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_headers_complete(parser=%p)", parser);
     connection_context *context = CONTEXT(parser);
     http_message *header = context->message;
     int skip = 0;
@@ -280,7 +367,7 @@ int http_parser_on_headers_complete(http_parser *parser) {
 }
 
 int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
-    DBG_HTTP_CALLBACK_DATA
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_body(parser=%p, length=%d)", parser, (int) length);
     connection_context *context = CONTEXT(parser);
     context->have_body = 1;
     int (*body_started)(connection_id_t);
@@ -302,7 +389,7 @@ int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
     }
 
     if (context->body_started == 0) {
-        content_encoding encoding = (content_encoding) body_started(context->id);
+        content_encoding_t encoding = (content_encoding_t) body_started(context->id);
         if (message_inflate_init(context, encoding) != 0) {
             throw_error(context, direction, PARSER_DECODE_ERROR, context->zlib_stream.msg);
             return 1;
@@ -332,7 +419,7 @@ static void throw_error(connection_context *context, transfer_direction_t direct
  * @param context Connection context
  * @param encoding Content encoding
  */
-static int message_inflate_init(connection_context *context, content_encoding encoding) {
+static int message_inflate_init(connection_context *context, content_encoding_t encoding) {
     context->content_encoding = encoding;
     if (encoding == CONTENT_ENCODING_IDENTITY) {
         // Uncompressed
@@ -620,8 +707,8 @@ int http_message_set_header_field(http_message *message,
     return  1;
 }
 
-char *http_message_get_header_field(const http_message *message,
-                                    const char *name, size_t length) {
+const char *http_message_get_header_field(const http_message *message,
+                                          const char *name, size_t length) {
     char *value;
     if (message == NULL || name == NULL || length == 0) return NULL;
     for (int i = 0; i < message->field_count; i++) {

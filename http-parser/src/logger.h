@@ -17,10 +17,10 @@ typedef enum {
     LOG_LEVEL_TRACE = 4
 } logger_log_level_t;
 
-typedef void (*logger_callback_t)(int log_level, const char *message);
+typedef void (*logger_callback_t)(logger_log_level_t log_level, const char *message);
 
 extern void logger_init(const char *filename, logger_callback_t callback);
-extern void logger_log(logger_log_level_t log_level, const char *message);
+extern void logger_log(logger_log_level_t log_level, const char *message, ...);
 
 #ifdef __cplusplus
 };

@@ -12,6 +12,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <syscall.h>
+#include <stdarg.h>
 #include "logger.h"
 
 #define TIME_FORMAT "%d.%m.%Y %H:%M:%S%z"
@@ -87,8 +88,13 @@ static const char *log_level_name(int level) {
  * @param log_level
  * @param message
  */
-void logger_log(logger_log_level_t log_level, const char *message) {
+void logger_log(logger_log_level_t log_level, const char *message, ...) {
+    va_list args;
+    va_start(args, message);
     if (logger_callback_func && log_level <= logger_current_log_level) {
-        logger_callback_func(log_level, message);
+        char fmt_message[256];
+        vsnprintf(fmt_message, 256, message, args);
+        logger_callback_func(log_level, fmt_message);
     }
+    va_end(args);
 }

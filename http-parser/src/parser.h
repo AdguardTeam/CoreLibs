@@ -297,8 +297,8 @@ int http_message_set_header_field(http_message *message,
  * @param length Length of field name character array
  * @return 0 if success
  */
-char *http_message_get_header_field(const http_message *message,
-                                    const char *name, size_t length);
+const char * http_message_get_header_field(const http_message *message,
+                                           const char *name, size_t length);
 
 /**
  * Adds new header field at header section of HTTP message
