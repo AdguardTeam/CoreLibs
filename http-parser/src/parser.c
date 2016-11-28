@@ -190,8 +190,10 @@ typedef struct connection_context { /* structure has name for queue.h macros */
     unsigned int            body_started;
     // Content-Encoding of body - identity (no decoding), deflate, gzip. Returned by on_body_started callback.
     content_encoding_t      content_encoding;
-    // Zlib decode buffer. Contains tail on previous input buffer which can't be processed right now
-    char                    *decode_buffer;
+    // Zlib decode input buffer. Contains tail on previous input buffer which can't be processed right now
+    char                    *decode_in_buffer;
+    // Zlib decode output buffer. Contains currently decompressed data
+    char                    *decode_out_buffer;
     // Zlib stream
     z_stream                zlib_stream;
     // Current error message
@@ -423,13 +425,16 @@ static int message_inflate_init(connection_context *context, content_encoding_t 
     context->content_encoding = encoding;
     if (encoding == CONTENT_ENCODING_IDENTITY) {
         // Uncompressed
-        context->decode_buffer = NULL;
+        context->decode_in_buffer = NULL;
+        context->decode_out_buffer = NULL;
         return 0;
     }
 
     memset(&context->zlib_stream, 0, sizeof(z_stream));
-    context->decode_buffer = malloc(ZLIB_DECOMPRESS_CHUNK_SIZE);
-    memset(context->decode_buffer, 0, ZLIB_DECOMPRESS_CHUNK_SIZE);
+    context->decode_in_buffer = malloc(ZLIB_DECOMPRESS_CHUNK_SIZE);
+    memset(context->decode_in_buffer, 0, ZLIB_DECOMPRESS_CHUNK_SIZE);
+    context->decode_out_buffer = malloc(ZLIB_DECOMPRESS_CHUNK_SIZE);
+    memset(context->decode_out_buffer, 0, ZLIB_DECOMPRESS_CHUNK_SIZE);
 
     switch (encoding) {
         case CONTENT_ENCODING_DEFLATE:
@@ -450,35 +455,58 @@ static int message_inflate_init(connection_context *context, content_encoding_t 
  * @return 0 if data is successfully decompressed, 1 in case of error
  */
 static int message_inflate(connection_context *context, const char *data, size_t length, body_data_callback body_data) {
-    if (context->decode_buffer == NULL) {
+    int result;
+
+    if (context->decode_out_buffer == NULL) {
         return 1;
     }
 
-    context->zlib_stream.next_in = (Bytef *) data;
-    context->zlib_stream.avail_in = (uInt) length;
+    // If we have a data in input buffer, append new data to it, otherwise process `data' as input buffer
+    if (context->zlib_stream.avail_in > 0) {
+        context->zlib_stream.next_in = (Bytef *) context->decode_in_buffer;
+        if (context->zlib_stream.avail_in + length > ZLIB_DECOMPRESS_CHUNK_SIZE) {
+            result = Z_BUF_ERROR;
+            goto error;
+        }
+        memcpy(context->decode_in_buffer + context->zlib_stream.avail_in, (int) data, length);
+        context->zlib_stream.avail_in += (uInt) length;
+    } else {
+        context->zlib_stream.next_in = (Bytef *) data;
+        context->zlib_stream.avail_in = (uInt) length;
+    }
 
-    // Call callback function for each decompressed block
+    int old_avail_in; // Check if we made a progress
     do {
+        old_avail_in = context->zlib_stream.avail_in;
         context->zlib_stream.avail_out = ZLIB_DECOMPRESS_CHUNK_SIZE;
-        context->zlib_stream.next_out = (Bytef *) context->decode_buffer;
-        int result = inflate(&context->zlib_stream, 0);
+        context->zlib_stream.next_out = (Bytef *) context->decode_out_buffer;
+        result = inflate(&context->zlib_stream, 0);
         if (result == Z_OK || result == Z_STREAM_END) {
             size_t processed = ZLIB_DECOMPRESS_CHUNK_SIZE - context->zlib_stream.avail_out;
             if (processed > 0) {
-                body_data(context->id, context->decode_buffer, processed);
+                // Call callback function for each decompressed block
+                body_data(context->id, context->decode_out_buffer, processed);
             }
         }
         if (result != Z_OK) {
-            message_inflate_end(context); /* result ignored */
-            if (result != Z_STREAM_END) {
-                fprintf(stderr, "Decompression error: %d\n", result);
-                return -1;
-            }
-            goto finish;
-        }
-    } while (context->zlib_stream.avail_in > 0);
+            goto error;
 
-    finish:
+        }
+    } while (context->zlib_stream.avail_in > 0 && old_avail_in != context->zlib_stream.avail_in);
+
+    // Move unprocessed tail to the start of input buffer
+    if (context->zlib_stream.avail_in) {
+        memcpy(context->decode_in_buffer, context->zlib_stream.next_in, context->zlib_stream.avail_in);
+    }
+
+    error:
+    message_inflate_end(context); /* result ignored */
+    if (result != Z_STREAM_END) {
+        fprintf(stderr, "Decompression error: %d\n", result);
+        return -1;
+    }
+
+finish:
     return 0;
 }
 
@@ -488,8 +516,10 @@ static int message_inflate(connection_context *context, const char *data, size_t
  */
 static int message_inflate_end(connection_context *context) {
     int result = inflateEnd(&context->zlib_stream);
-    free(context->decode_buffer);
-    context->decode_buffer = NULL;
+    free(context->decode_in_buffer);
+    context->decode_in_buffer = NULL;
+    free(context->decode_out_buffer);
+    context->decode_out_buffer = NULL;
     return result;
 }
 
@@ -510,7 +540,7 @@ int http_parser_on_message_complete(http_parser *parser) {
         }
     }
 
-    if (context->decode_buffer != NULL) {
+    if (context->decode_out_buffer != NULL) {
         message_inflate_end(context);
     }
 

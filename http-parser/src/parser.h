@@ -1,8 +1,8 @@
 /*
  *  HTTP parser API.
  */
-#ifndef PARSER_H
-#define PARSER_H
+#ifndef HTTP_PARSER_PARSER_H
+#define HTTP_PARSER_PARSER_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,6 +54,11 @@ typedef enum {
     DIRECTION_OUT
 } transfer_direction_t;
 
+/**
+ * Parser error type
+ * HTTP - http_parser error
+ * DECODE - zlib error
+ */
 typedef enum {
     PARSER_HTTP_ERROR = 0,
     PARSER_DECODE_ERROR
@@ -326,7 +331,7 @@ int http_message_del_header_field(http_message *message,
  * header fields and the ending CRLF
  * @param message Pointer to HTTP message
  * @param length Pointer to size_t variable where length of output will be written
- * @return Character array containing serialied HTTP message
+ * @return Character array containing serialized HTTP message
  */
 char *http_message_raw(const http_message *message, size_t *length);
 
@@ -334,4 +339,4 @@ char *http_message_raw(const http_message *message, size_t *length);
 }
 #endif
 
-#endif /* PARSER_H */
+#endif /* HTTP_PARSER_PARSER_H */
