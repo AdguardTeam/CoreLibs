@@ -1,39 +1,60 @@
 package com.adguard.http.parser;
 
+import java.io.IOException;
+
 /**
  * Created by s.fionov on 08.11.16.
  */
 public class NativeParser implements Parser {
 
 	static {
-		System.loadLibrary("httpparser");
+		System.loadLibrary("httpparser-jni");
 	}
 
-	// TODO: add ability to create multiple parsers (store native pointer of parser-wide context)
+	private long nativePtr;
 
-	public static native synchronized int connect(long id, Callbacks callbacks);
+	private static native void init(NativeParser parser);
 
-	@Override
-	public int connect(long id, ParserCallbacks callbacks) {
-		return connect(id, new Callbacks(callbacks));
+	public NativeParser() {
+		init(this);
 	}
 
-	public native static synchronized int disconnect0(long id, int direction);
+	public static native synchronized long connect(long parserNativePtr, long id, Callbacks callbacks);
 
 	@Override
-	public int disconnect(long id, Direction direction) {
-		return disconnect0(id, direction.getCode());
+	public NativeConnection connect(long id, ParserCallbacks callbacks) {
+		return new NativeConnection(connect(nativePtr, id, new Callbacks(callbacks)));
 	}
 
-	public static native int input0(long id, int direction, byte[] data);
+	public native static synchronized int disconnect0(long connectionNativePtr, int direction);
 
 	@Override
-	public int input(long id, Direction direction, byte[] data) {
-		return input0(id, direction.getCode(), data);
+	public int disconnect(Connection connection, Direction direction) {
+		return disconnect0(((NativeConnection) connection).nativePtr, direction.getCode());
 	}
 
+	public static native int input0(long connectionNativePtr, int direction, byte[] data);
+
 	@Override
-	public native int close(long id);
+	public int input(Connection connection, Direction direction, byte[] data) {
+		return input0(((NativeConnection) connection).nativePtr, direction.getCode(), data);
+	}
+
+	public static native int closeConnection(long connectionNativePtr);
+
+	@Override
+	public int close(Connection connection) {
+		return closeConnection(((NativeConnection) connection).nativePtr);
+	}
+
+	public static native long getConnectionId(long nativePtr);
+
+	public static native void closeParser(long parserNativePtr);
+
+	@Override
+	public void close() throws IOException {
+		closeParser(nativePtr);
+	}
 
 	private static class Callbacks {
 		private final ParserCallbacks callbacks;
@@ -80,6 +101,22 @@ public class NativeParser implements Parser {
 
 		void onParseError(long id, int direction, int errorType, String message) {
 			callbacks.onParseError(id, Direction.getByCode(direction), errorType, message);
+		}
+	}
+
+	/**
+	 * Created by s.fionov on 29.11.16.
+	 */
+	public static class NativeConnection implements Parser.Connection {
+		private long nativePtr;
+
+		public NativeConnection(long nativePtr) {
+			this.nativePtr = nativePtr;
+		}
+
+		@Override
+		public long getId() {
+			return getConnectionId(nativePtr);
 		}
 	}
 }

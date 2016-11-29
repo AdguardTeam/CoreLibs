@@ -33,7 +33,7 @@ public class TestHttpClient {
 		buf = ByteBuffer.allocateDirect(65536);
 
 		Parser parser = new NativeParser();
-		parser.connect(requestId, new HttpClientCallbacks());
+		Parser.Connection parserConnection = parser.connect(requestId, new HttpClientCallbacks());
 		while (true) {
 			buf.clear();
 			int r = ch.read(buf);
@@ -43,7 +43,7 @@ public class TestHttpClient {
 			buf.flip();
 			byte[] bytes = bufToBytes(buf);
 			log.info("received:\n" + new String(bytes, Charset.forName("ascii")));
-			r = parser.input(requestId, Direction.IN, bytes);
+			r = parser.input(parserConnection, Direction.IN, bytes);
 			log.info("result: " + r);
 		}
 	}

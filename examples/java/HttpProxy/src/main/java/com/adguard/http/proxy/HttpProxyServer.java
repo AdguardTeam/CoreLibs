@@ -41,7 +41,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	public void onInput(AsyncTcpConnectionEndpoint endpoint, byte[] bytes) {
 		HttpProxyContext context = getContext(endpoint);
 		if (!context.isHttpConnectMode()) {
-			parser.input(context.getConnectionId(), context.getDirection(endpoint), bytes);
+			parser.input(context.getConnection(), context.getDirection(endpoint), bytes);
 		} else {
 			AsyncTcpConnectionEndpoint anotherEndpoint = context.getOpposingEndpoint(endpoint);
 			anotherEndpoint.write(bytes);
@@ -54,9 +54,9 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		synchronized (nextConnectionIdSync) {
 			connectionId = nextConnectionId++;
 		}
-		parser.connect(connectionId, this);
+		Parser.Connection connection = parser.connect(connectionId, this);
 
-		HttpProxyContext context = new HttpProxyContext(connectionId, selector, endpoint);
+		HttpProxyContext context = new HttpProxyContext(connection, selector, endpoint);
 		contexts.put(connectionId, context);
 	}
 
@@ -153,8 +153,8 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	private HttpMessage createHttpConnectionEstablishedResponse() {
 		HttpMessage message = new HttpMessage();
 		message.setStatusCode(200);
-		message.setStatus("Connection established");
-		message.addHeader("Connection", "close");
+		message.setStatus("NativeConnection established");
+		message.addHeader("NativeConnection", "close");
 		return message;
 	}
 
@@ -180,7 +180,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 			response.setStatusCode(400);
 			response.setStatus("Bad request");
 			response.addHeader("Content-Length", "0");
-			response.addHeader("Connection", "close");
+			response.addHeader("NativeConnection", "close");
 			endpoint.write(response.getBytes());
 			endpoint.close();
 		} finally {
@@ -333,7 +333,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		HttpProxyContext context = getContext(endpoint);
 		if (!context.isClosed()) {
 			Direction direction = context.getDirection(endpoint);
-			parser.disconnect(context.getConnectionId(), direction);
+			parser.disconnect(context.getConnection(), direction);
 
 			if (direction == Direction.OUT || context.isHttpConnectMode()) {
 				getContext(endpoint).close();
@@ -341,7 +341,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 				getContext(endpoint).removeRemoteEndpoint(endpoint);
 			}
 		} else {
-			parser.close(context.getConnectionId());
+			parser.close(context.getConnection());
 		}
 	}
 
@@ -362,7 +362,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 					HttpMessage response = createGatewayTimeoutResponse();
 					sendResponse(anotherEndpoint, response, null);
 				} else if (context.isHttpConnectMode()) {
-					HttpMessage response = createErrorResponse(503, "Connection failed", t);
+					HttpMessage response = createErrorResponse(503, "NativeConnection failed", t);
 					sendResponse(anotherEndpoint, response, null);
 				}
 			}

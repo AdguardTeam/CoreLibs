@@ -3,6 +3,7 @@ package com.adguard.http.proxy;
 import com.adguard.http.parser.ContentEncoding;
 import com.adguard.http.parser.Direction;
 import com.adguard.http.parser.HttpMessage;
+import com.adguard.http.parser.Parser;
 
 import java.nio.channels.Selector;
 import java.util.Map;
@@ -13,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class HttpProxyContext {
 
-	private long connectionId;
+	private Parser.Connection connection;
 
 	private AsyncTcpConnectionEndpoint localEndpoint;
 	private Map<String, AsyncTcpConnectionEndpoint> remoteEndpoints = new ConcurrentHashMap<>();
@@ -27,15 +28,15 @@ public class HttpProxyContext {
 	private volatile boolean httpConnectMode = false;
 	private volatile Direction currentDirection = Direction.OUT;
 
-	public HttpProxyContext(long connectionId, Selector selector, AsyncTcpConnectionEndpoint localEndpoint) {
-		this.connectionId = connectionId;
+	public HttpProxyContext(Parser.Connection connection, Selector selector, AsyncTcpConnectionEndpoint localEndpoint) {
+		this.connection = connection;
 		this.selector = selector;
 		this.localEndpoint = localEndpoint;
 		localEndpoint.attach(this);
 	}
 
-	public long getConnectionId() {
-		return connectionId;
+	public Parser.Connection getConnection() {
+		return connection;
 	}
 
 	public AsyncTcpConnectionEndpoint getLocalEndpoint() {

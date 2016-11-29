@@ -13,15 +13,19 @@ typedef struct {
     jobject callbacks;
 } ParserContext;
 
-static int NativeParser_HttpRequestReceived(connection_id_t id, void *header);
-static int NativeParser_HttpRequestBodyStarted(connection_id_t id);
-static void NativeParser_HttpRequestBodyData(connection_id_t id, const char *data, size_t length);
-static void NativeParser_HttpRequestBodyFinished(connection_id_t id);
-static int NativeParser_HttpResponseReceived(connection_id_t id, void *header);
-static int NativeParser_HttpResponseBodyStarted(connection_id_t id);
-static void NativeParser_HttpResponseBodyData(connection_id_t id, const char *data, size_t length);
-static void NativeParser_HttpResponseBodyFinished(connection_id_t id);
-static void NativeParser_ParseError(connection_id_t id, transfer_direction_t direction, error_type_t type, const char *message);
+struct connection_context {
+    connection_id_t id;
+};
+
+static int NativeParser_HttpRequestReceived(connection_context *context, void *header);
+static int NativeParser_HttpRequestBodyStarted(connection_context *context);
+static void NativeParser_HttpRequestBodyData(connection_context *context, const char *data, size_t length);
+static void NativeParser_HttpRequestBodyFinished(connection_context *context);
+static int NativeParser_HttpResponseReceived(connection_context *context, void *message);
+static int NativeParser_HttpResponseBodyStarted(connection_context *context);
+static void NativeParser_HttpResponseBodyData(connection_context *context, const char *data, size_t length);
+static void NativeParser_HttpResponseBodyFinished(connection_context *context);
+static void processError(JNIEnv *env, int return_code, char message[256]);
 
 static parser_callbacks contextCallbacks = {
         .http_request_received = NativeParser_HttpRequestReceived,
@@ -31,8 +35,7 @@ static parser_callbacks contextCallbacks = {
         .http_response_received = NativeParser_HttpResponseReceived,
         .http_response_body_started = NativeParser_HttpResponseBodyStarted,
         .http_response_body_data = NativeParser_HttpResponseBodyData,
-        .http_response_body_finished = NativeParser_HttpResponseBodyFinished,
-        .parse_error = NativeParser_ParseError,
+        .http_response_body_finished = NativeParser_HttpResponseBodyFinished
 };
 
 class Callbacks {
@@ -46,7 +49,6 @@ public:
     jmethodID HttpResponseBodyStartedCallback;
     jmethodID HttpResponseBodyDataCallback;
     jmethodID HttpResponseBodyFinishedCallback;
-    jmethodID ParseErrorCallback;
 
     Callbacks(JNIEnv *env);
 };
@@ -54,7 +56,16 @@ static Callbacks *javaCallbacks = NULL;
 
 static std::map<jlong, ParserContext *> context_map;
 
-int Java_com_adguard_http_parser_NativeParser_connect(JNIEnv *env, jclass cls, jlong id,
+/**
+ * Invoke parser_connect(), process errors and return the native pointer to connection context
+ * @param env JNI env
+ * @param cls NativeParser class
+ * @param parserNativePtr Pointer to parser context
+ * @param id Connection id
+ * @param callbacks NativeParser$Callbacks object
+ * @return Pointer to connection context
+ */
+jlong Java_com_adguard_http_parser_NativeParser_connect(JNIEnv *env, jclass cls, jlong parserNativePtr, jlong id,
                                                       jobject callbacks) {
     ParserContext *context = context_map[id];
     if (context == NULL) {
@@ -72,103 +83,99 @@ int Java_com_adguard_http_parser_NativeParser_connect(JNIEnv *env, jclass cls, j
         javaCallbacks = new Callbacks(env);
     }
 
-    int r = parser_connect(id, info, &contextCallbacks);
-    return r;
+    connection_context *connection_ctx;
+    parser_context *parser_ctx = (parser_context *) parserNativePtr;
+    int r = parser_connect(parser_ctx, id, &contextCallbacks, &connection_ctx);
+    if (r) {
+        char message[256];
+        snprintf(message, 256, "parser_connect() returned %d", r);
+        processError(env, r, message);
+    }
+    return (jlong) connection_ctx;
 }
 
-static int NativeParser_HttpRequestReceived(connection_id_t id, void *header) {
-    ParserContext *context = context_map[id];
+static int NativeParser_HttpRequestReceived(connection_context *connection_ctx, void *message) {
+    ParserContext *context = context_map[connection_ctx->id];
     if (context == NULL) {
         return -1;
     }
 
-    http_message *clone = http_message_clone((const http_message *) header);
-    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestReceivedCallback, id, (jlong) clone);
+    http_message *clone = http_message_clone((const http_message *) message);
+    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestReceivedCallback, connection_ctx->id, (jlong) clone);
 }
 
-static int NativeParser_HttpRequestBodyStarted(connection_id_t id) {
-    ParserContext *context = context_map[id];
+static int NativeParser_HttpRequestBodyStarted(connection_context *connection_ctx) {
+    ParserContext *context = context_map[connection_ctx->id];
     if (context == NULL) {
         return -1;
     }
 
-    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestBodyStartedCallback, id);
+    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestBodyStartedCallback, connection_ctx->id);
 }
 
-static void NativeParser_HttpRequestBodyData(connection_id_t id, const char *data, size_t length) {
-    ParserContext *context = context_map[id];
+static void NativeParser_HttpRequestBodyData(connection_context *connection_ctx, const char *data, size_t length) {
+    ParserContext *context = context_map[connection_ctx->id];
     if (context == NULL) {
         return;
     }
 
     jbyteArray arr = context->env->NewByteArray((jsize) length);
     context->env->SetByteArrayRegion(arr, 0, (jsize) length, (jbyte *) data);
-    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyDataCallback, id, arr);
+    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyDataCallback, connection_ctx->id, arr);
 
     // JNI will not auto clean local references since this method wasn't invoked from JVM
     context->env->DeleteLocalRef(arr);
 }
 
-static void NativeParser_HttpRequestBodyFinished(connection_id_t id) {
-    ParserContext *context = context_map[id];
+static void NativeParser_HttpRequestBodyFinished(connection_context *connection_ctx) {
+    ParserContext *context = context_map[connection_ctx->id];
     if (context == NULL) {
         return;
     }
 
-    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyFinishedCallback, id);
+    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyFinishedCallback, connection_ctx->id);
 }
 
-static int NativeParser_HttpResponseReceived(connection_id_t id, void *header) {
-    ParserContext *context = context_map[id];
+static int NativeParser_HttpResponseReceived(connection_context *connection_ctx, void *message) {
+    ParserContext *context = context_map[connection_ctx->id];
     if (context == NULL) {
         return -1;
     }
 
-    http_message *clone = http_message_clone((const http_message *) header);
-    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseReceivedCallback, id, (jlong) clone);
+    http_message *clone = http_message_clone((const http_message *) message);
+    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseReceivedCallback, connection_ctx->id, (jlong) clone);
 }
 
-static int NativeParser_HttpResponseBodyStarted(connection_id_t id) {
-    ParserContext *context = context_map[id];
+static int NativeParser_HttpResponseBodyStarted(connection_context *connection_ctx) {
+    ParserContext *context = context_map[connection_ctx->id];
     if (context == NULL) {
         return -1;
     }
 
-    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseBodyStartedCallback, id);
+    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseBodyStartedCallback, connection_ctx->id);
 }
 
-static void NativeParser_HttpResponseBodyData(connection_id_t id, const char *data, size_t length) {
-    ParserContext *context = context_map[id];
+static void NativeParser_HttpResponseBodyData(connection_context *connection_ctx, const char *data, size_t length) {
+    ParserContext *context = context_map[connection_ctx->id];
     if (context == NULL) {
         return;
     }
 
     jbyteArray arr = context->env->NewByteArray((jsize) length);
     context->env->SetByteArrayRegion(arr, 0, (jsize) length, (jbyte *) data);
-    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyDataCallback, id, arr);
+    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyDataCallback, connection_ctx->id, arr);
 
     // JNI will not auto clean local references since this method wasn't invoked from JVM
     context->env->DeleteLocalRef(arr);
 }
 
-static void NativeParser_HttpResponseBodyFinished(connection_id_t id) {
-    ParserContext *context = context_map[id];
+static void NativeParser_HttpResponseBodyFinished(connection_context *connection_ctx) {
+    ParserContext *context = context_map[connection_ctx->id];
     if (context == NULL) {
         return;
     }
 
-    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyFinishedCallback, id);
-}
-
-static void NativeParser_ParseError(connection_id_t id, transfer_direction_t direction, error_type_t type, const char *message) {
-    ParserContext *context = context_map[id];
-    if (context == NULL) {
-        return;
-    }
-
-    jstring messageString = context->env->NewStringUTF(message);
-    context->env->CallVoidMethod(context->callbacks, javaCallbacks->ParseErrorCallback, id, (int) direction, (int) type, messageString);
-    context->env->DeleteLocalRef(messageString);
+    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyFinishedCallback, connection_ctx->id);
 }
 
 Callbacks::Callbacks(JNIEnv *env) {
@@ -184,30 +191,59 @@ Callbacks::Callbacks(JNIEnv *env) {
     HttpResponseBodyStartedCallback = env->GetMethodID(callbacksClass, "onHttpResponseBodyStarted", "(J)I");
     HttpResponseBodyDataCallback = env->GetMethodID(callbacksClass, "onHttpResponseBodyData", "(J[B)V");
     HttpResponseBodyFinishedCallback = env->GetMethodID(callbacksClass, "onHttpResponseBodyFinished", "(J)V");
-    ParseErrorCallback = env->GetMethodID(callbacksClass, "onParseError", "(JIILjava/lang/String;)V");
 }
 
-jint Java_com_adguard_http_parser_NativeParser_disconnect0(JNIEnv *env, jclass cls, jlong id,
+jint Java_com_adguard_http_parser_NativeParser_disconnect0(JNIEnv *env, jclass cls, jlong connectionPtr,
                                                           jint direction) {
-    ParserContext *context = context_map[id];
-    parser_disconnect(id, (transfer_direction_t) direction);
+    connection_context *context = (connection_context *) connectionPtr;
+    parser_disconnect(context, (transfer_direction_t) direction);
     if (direction == DIRECTION_OUT) {
         // delete context;
     }
     return 0;
 }
 
-jint Java_com_adguard_http_parser_NativeParser_input0(JNIEnv *env, jclass cls, jlong id, jint direction,
+jint Java_com_adguard_http_parser_NativeParser_input0(JNIEnv *env, jclass cls, jlong connectionPtr, jint direction,
                                                      jbyteArray bytes) {
+    connection_context *context = (connection_context *) connectionPtr;
     jbyte *data = env->GetByteArrayElements(bytes, NULL);
     int len = env->GetArrayLength(bytes);
-    int r = parser_input(id, (transfer_direction_t) direction, (const char *) data, len);
+    int r = parser_input(context, (transfer_direction_t) direction, (const char *) data, len);
     env->ReleaseByteArrayElements(bytes, data, JNI_ABORT);
     return r;
 }
 
-jint Java_com_adguard_http_parser_NativeParser_close(JNIEnv *env, jobject obj, jlong id) {
-    return parser_connection_close(id);
+jint Java_com_adguard_http_parser_NativeParser_closeConnection(JNIEnv *env, jclass cls, jlong connectionPtr) {
+    connection_context *context = (connection_context *) connectionPtr;
+    return parser_connection_close(context);
+}
+
+jlong Java_com_adguard_http_parser_NativeParser_getConnectionId(JNIEnv *env, jclass cls, jlong connectionPtr) {
+    connection_context *context = (connection_context *) connectionPtr;
+    return (jlong) context->id;
+}
+
+void Java_com_adguard_http_parser_NativeParser_init(JNIEnv *env, jclass cls, jobject parser) {
+    fprintf(stderr, "NativeParser.init()\n");
+    jfieldID field = env->GetFieldID(cls, "nativePtr", "J");
+    if (field == NULL) {
+        return;
+    }
+    parser_context *parser_ctx;
+    int r = parser_create(&parser_ctx);
+    if (r == 0) {
+        env->SetLongField(parser, field, (jlong) parser_ctx);
+    } else {
+        env->ThrowNew(env->FindClass("java/io/Exception"), "NativeParser()");
+    }
+}
+
+void Java_com_adguard_http_parser_NativeParser_closeParser(JNIEnv *env, jclass cls, jlong parserPtr) {
+    parser_context *parser_ctx = (parser_context *) parserPtr;
+    int r = parser_destroy(parser_ctx);
+    if (r != 0) {
+        env->ThrowNew(env->FindClass("java/io/Exception"), "NativeParser.close()");
+    }
 }
 
 jstring Java_com_adguard_http_parser_HttpMessage_getUrl(JNIEnv * env, jclass cls, jlong nativePtr) {
@@ -349,4 +385,35 @@ jstring Java_com_adguard_http_parser_HttpMessage_00024HttpHeaderField_getKey(JNI
 jstring Java_com_adguard_http_parser_HttpMessage_00024HttpHeaderField_getValue(JNIEnv *env, jclass cls, jlong nativePtr) {
     http_header_field *parameter = (http_header_field *) nativePtr;
     return env->NewStringUTF(parameter->value);
+}
+
+/**
+ * Throws exception corresponding to error code
+ * @param env JNI env
+ * @param return_code Error code
+ * @param message Error message
+ */
+static void processError(JNIEnv *env, int return_code, char *message) {
+    char final_message[256];
+    switch ((error_type_t) return_code) {
+        case PARSER_NULL_POINTER_ERROR:
+            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), message);
+            break;
+        case PARSER_HTTP_PARSE_ERROR:
+            snprintf(final_message, 256, "HTTP parse error: %s", message);
+            env->ThrowNew(env->FindClass("java/io/IOException"), message);
+            break;
+        case PARSER_ZLIB_ERROR:
+            snprintf(final_message, 256, "Zlib error: %s", message);
+            env->ThrowNew(env->FindClass("java/io/IOException"), message);
+            break;
+        case PARSER_INVALID_ARGUMENT_ERROR:
+            env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), message);
+            break;
+        case PARSER_ALREADY_CONNECTED_ERROR:
+            env->ThrowNew(env->FindClass("java/io/IOException"), message);
+        default:
+            env->ThrowNew(env->FindClass("java/lang/RuntimeException"), message);
+            break;
+    }
 }

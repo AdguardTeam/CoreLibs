@@ -7,6 +7,9 @@
 #include "../src/logger.h"
 
 int main() {
-    logger_init(NULL, NULL);
+    logger_open(NULL, LOG_LEVEL_INFO, NULL);
     logger_log(LOG_LEVEL_INFO, "Logger test %d", time(0));
+    logger_log(LOG_LEVEL_TRACE, "Logger test trace 1");
+    logger_set_log_level(LOG_LEVEL_TRACE);
+    logger_log(LOG_LEVEL_TRACE, "Logger test trace 2");
 }

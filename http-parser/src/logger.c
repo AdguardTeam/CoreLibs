@@ -25,7 +25,7 @@ static logger_log_level_t logger_current_log_level = LOG_LEVEL_INFO;
 static const char *log_level_name(int level);
 static void logger_log_to_file(logger_log_level_t log_level, const char *message);
 
-void logger_init(const char *filename, logger_callback_t callback) {
+void logger_open(const char *filename, logger_log_level_t log_level, logger_callback_t callback) {
     if (callback) {
         logger_callback_func = callback;
     } else {
@@ -37,15 +37,16 @@ void logger_init(const char *filename, logger_callback_t callback) {
         }
         if (logger_file == NULL) {
             fprintf(stderr, "Using stderr for log output.\n");
-            logger_file = fdopen(dup(fileno(stderr)), "w+");
+            logger_file = stderr;//fdopen(dup(fileno(stderr)), "w+");
         }
         logger_callback_func = logger_log_to_file;
     }
+    logger_current_log_level = log_level;
 }
 
 void logger_close() {
     if (logger_file) {
-        if (fclose(logger_file) != 0) {
+        if (fileno(logger_file) < 3 && fclose(logger_file) != 0) {
             fprintf(stderr, "Error closing logfile");
         }
         logger_file = NULL;
@@ -97,4 +98,12 @@ void logger_log(logger_log_level_t log_level, const char *message, ...) {
         logger_callback_func(log_level, fmt_message);
     }
     va_end(args);
+}
+
+void logger_set_log_level(logger_log_level_t log_level) {
+    logger_current_log_level = log_level;
+}
+
+int logger_is_open() {
+    return logger_file != NULL;
 }

@@ -25,9 +25,10 @@ typedef void (*logger_callback_t)(logger_log_level_t log_level, const char *mess
 /**
  * Initialize logger (open log file and set logger callback)
  * @param filename Filename
+ * @param log_level Logger log level
  * @param callback Logger callback
  */
-extern void logger_init(const char *filename, logger_callback_t callback);
+extern void logger_open(const char *filename, logger_log_level_t log_level, logger_callback_t callback);
 
 /**
  * Log message
@@ -35,6 +36,18 @@ extern void logger_init(const char *filename, logger_callback_t callback);
  * @param fmt Format string
  */
 extern void logger_log(logger_log_level_t log_level, const char *fmt, ...);
+
+/**
+ * Logger set log level
+ * @param log_level Logger log level
+ */
+extern void logger_set_log_level(logger_log_level_t log_level);
+
+/**
+ * Is logger open
+ * @return True if opened
+ */
+extern int logger_is_open();
 
 #ifdef __cplusplus
 };

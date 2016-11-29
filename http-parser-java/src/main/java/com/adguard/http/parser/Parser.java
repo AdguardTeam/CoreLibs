@@ -1,18 +1,23 @@
 package com.adguard.http.parser;
 
+import java.io.Closeable;
 import java.nio.ByteBuffer;
 
 /**
  * Created by s.fionov on 08.11.16.
  */
-public interface Parser {
+public interface Parser extends Closeable {
 
 	// TODO: don't return int, throw an Exception
-	int connect(long id, ParserCallbacks callbacks);
+	Connection connect(long id, ParserCallbacks callbacks);
 
-	int disconnect(long id, Direction direction);
+	int disconnect(Connection connection, Direction direction);
 
-	int input(long id, Direction direction, byte[] data);
+	int input(Connection connection, Direction direction, byte[] data);
 
-	int close(long id);
+	int close(Connection connection);
+
+	interface Connection {
+		long getId();
+	}
 }

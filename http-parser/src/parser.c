@@ -160,10 +160,12 @@ typedef enum {
     CONTENT_ENCODING_GZIP = 2
 } content_encoding_t;
 
+typedef struct parser_context parser_context;
+
 /*
  * Connection context structure
  */
-typedef struct connection_context { /* structure has name for queue.h macros */
+struct connection_context { /* structure has name for queue.h macros */
     // Connection id
     connection_id_t         id;
     // Connection info (endpoint names), not used by any current language bindings
@@ -175,20 +177,24 @@ typedef struct connection_context { /* structure has name for queue.h macros */
     // Pointer to parser settings
     http_parser_settings    *settings;
     // Pointer to message which is currently being constructed
-    http_message             *message;
+    http_message            *message;
+    // Pointer to parent context
+    parser_context          *parser_ctx;
 
     // State flags:
     // Message construction is done
     size_t                  done;
     // We are currently in field (after retrieveing field name and before reteiving field value)
-    unsigned int            in_field;
+    int                     in_field;
     /* Flag if message have body (Content-length is more than zero, body can yet be empty if
      * consists to one empty chunk)
      */
-    unsigned int            have_body;
+    int                     have_body;
     // We are currently in body and body decoding started (if message body needs any kind of decoding)
-    unsigned int            body_started;
-    // Content-Encoding of body - identity (no decoding), deflate, gzip. Returned by on_body_started callback.
+    int                     body_started;
+    // Decode is needed flag
+    int                     need_decode;
+    // Content-Encoding of body - identity (no encoding), deflate, gzip. Determined from headers.
     content_encoding_t      content_encoding;
     // Zlib decode input buffer. Contains tail on previous input buffer which can't be processed right now
     char                    *decode_in_buffer;
@@ -198,10 +204,13 @@ typedef struct connection_context { /* structure has name for queue.h macros */
     z_stream                zlib_stream;
     // Current error message
     char                    error_message[256];
+    // Current error code
+    error_type_t            error_type;
+
     // Content-by-id hashmap entry (queue.h based)
     // TODO: may be it is better to use klib/khash instead
     TAILQ_ENTRY(connection_context) context_by_id_entry;
-} connection_context;
+};
 
 /*
  * Functions for body decompression.
@@ -210,12 +219,12 @@ typedef struct connection_context { /* structure has name for queue.h macros */
 /*
  * Body data callback. Usually it is parser_callbacks.http_request_body_data()
  */
-typedef void (*body_data_callback)(connection_id_t, const char*, size_t);
+typedef void (*body_data_callback)(connection_context *context, const char *at, size_t length);
 /*
  * Initializes zlib stream for current HTTP message body.
  * Used internally by http_parser_on_body().
  */
-static int message_inflate_init(connection_context *context, content_encoding_t encoding);
+static int message_inflate_init(connection_context *context);
 /*
  * Inflate current input buffer and call body_data_callback for each decompressed chunk
  */
@@ -235,12 +244,14 @@ static int message_inflate_end(connection_context *context);
  * @param type Error type: HTTP or DECODE (zlib error).
  * @param msg Error message (may be null or empty)
  */
-static void throw_error(connection_context *context, transfer_direction_t direction, error_type_t type, const char *msg);
+static void set_error(connection_context *context, error_type_t type, const char *msg);
 
 /*
  *  Node.js http_parser's callbacks (parser->settings):
  */
 /* For in-callback using only! */
+
+static content_encoding_t get_content_encoding(connection_context *context);
 
 #define CONTEXT(parser)         ((connection_context*)parser->data)
 
@@ -250,23 +261,24 @@ static void throw_error(connection_context *context, transfer_direction_t direct
 #define HASH_SIZE 63
 
 TAILQ_HEAD(context_by_id, connection_context);
-static struct context_by_id context_by_id_hash[HASH_SIZE];
+struct parser_context {
+    struct context_by_id context_by_id_hash[HASH_SIZE];
+    int context_by_id_hash_initialized;
+};
 
-static int context_by_id_hash_initialized = 0;
-
-static void context_by_id_init() {
+static void context_by_id_init(parser_context *parser_ctx) {
     for (int i = 0; i < HASH_SIZE; i++) {
-        TAILQ_INIT(&context_by_id_hash[i]);
+        TAILQ_INIT(&parser_ctx->context_by_id_hash[i]);
     }
 }
 
-static connection_context *context_by_id_get(connection_id_t id) {
-    if (!context_by_id_hash_initialized) {
-        context_by_id_init();
-        context_by_id_hash_initialized = 1;
+static connection_context *context_by_id_get(parser_context *parser_ctx, connection_id_t id) {
+    if (!parser_ctx->context_by_id_hash_initialized) {
+        context_by_id_init(parser_ctx);
+        parser_ctx->context_by_id_hash_initialized = 1;
     }
     struct connection_context *context;
-    TAILQ_FOREACH(context, &context_by_id_hash[id % HASH_SIZE], context_by_id_entry) {
+    TAILQ_FOREACH(context, &parser_ctx->context_by_id_hash[id % HASH_SIZE], context_by_id_entry) {
         if (context->id == id) {
             return context;
         }
@@ -274,15 +286,16 @@ static connection_context *context_by_id_get(connection_id_t id) {
     return NULL;
 }
 
-static void context_by_id_add(connection_context *context) {
-    TAILQ_INSERT_HEAD(&context_by_id_hash[context->id % HASH_SIZE], context, context_by_id_entry);
+static void context_by_id_add(parser_context *parser_ctx, connection_context *context) {
+    context->parser_ctx = parser_ctx;
+    TAILQ_INSERT_HEAD(&parser_ctx->context_by_id_hash[context->id % HASH_SIZE], context, context_by_id_entry);
 }
 
-static connection_context *context_by_id_remove(connection_id_t id) {
+static connection_context *context_by_id_remove(parser_context *parser_ctx, connection_id_t id) {
     struct connection_context *context;
-    TAILQ_FOREACH(context, &context_by_id_hash[id % HASH_SIZE], context_by_id_entry) {
+    TAILQ_FOREACH(context, &parser_ctx->context_by_id_hash[id % HASH_SIZE], context_by_id_entry) {
         if (context->id == id) {
-            TAILQ_REMOVE(&context_by_id_hash[id % HASH_SIZE], context, context_by_id_entry);
+            TAILQ_REMOVE(&parser_ctx->context_by_id_hash[id % HASH_SIZE], context, context_by_id_entry);
             return context;
         }
     }
@@ -294,9 +307,9 @@ static connection_context *context_by_id_remove(connection_id_t id) {
  */
 int http_parser_on_message_begin(http_parser *parser) {
     logger_log(LOG_LEVEL_TRACE, "http_parser_on_message_begin(parser=%p)", parser);
-    DBG_HTTP_CALLBACK
     connection_context *context = CONTEXT(parser);
     create_http_message(&context->message);
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_message_begin() returned %d", 0);
     return 0;
 }
 
@@ -307,6 +320,7 @@ int http_parser_on_url(http_parser *parser, const char *at, size_t length) {
     if (at != NULL && length > 0) {
         append_chars(&header->url, at, length);
     }
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_url() returned %d", 0);
     return 0;
 }
 
@@ -318,6 +332,7 @@ int http_parser_on_status(http_parser *parser, const char *at, size_t length) {
         append_chars(&header->status, at, length);
         header->status_code = parser->status_code;
     }
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_status() returned %d", 0);
     return 0;
 }
 
@@ -332,6 +347,7 @@ int http_parser_on_header_field(http_parser *parser, const char *at, size_t leng
         }
         append_chars(&header->fields[header->field_count - 1].name, at, length);
     }
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_header_field() returned %d", 0);
     return 0;
 }
 
@@ -345,26 +361,28 @@ int http_parser_on_header_value(http_parser *parser, const char *at, size_t leng
     } else {
         header->fields[header->field_count - 1].value = calloc(1, 1);
     }
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_header_value() returned %d", 0);
     return 0;
 }
 
 int http_parser_on_headers_complete(http_parser *parser) {
     logger_log(LOG_LEVEL_TRACE, "http_parser_on_headers_complete(parser=%p)", parser);
     connection_context *context = CONTEXT(parser);
-    http_message *header = context->message;
+    http_message *message = context->message;
     int skip = 0;
     switch (parser->type) {
         case HTTP_REQUEST:
-            asprintf(&header->method, "%s", http_method_str(parser->method));
-            skip = context->callbacks->http_request_received(context->id, header);
+            asprintf(&message->method, "%s", http_method_str(parser->method));
+            skip = context->callbacks->http_request_received(context, message);
             break;
         case HTTP_RESPONSE:
-            skip = context->callbacks->http_response_received(context->id, header);
+            skip = context->callbacks->http_response_received(context, message);
             break;
         default:
             break;
     }
 
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_headers_complete() returned %d", skip);
     return skip;
 }
 
@@ -372,9 +390,10 @@ int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
     logger_log(LOG_LEVEL_TRACE, "http_parser_on_body(parser=%p, length=%d)", parser, (int) length);
     connection_context *context = CONTEXT(parser);
     context->have_body = 1;
-    int (*body_started)(connection_id_t);
+    int (*body_started)(connection_context *);
     body_data_callback body_data;
     transfer_direction_t direction;
+    error_type_t r = PARSER_OK;
     switch (parser->type) {
         case HTTP_REQUEST:
             body_started = context->callbacks->http_request_body_started;
@@ -387,43 +406,47 @@ int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
             direction = DIRECTION_IN;
             break;
         default:
-            return -1;
+            r = PARSER_INVALID_ARGUMENT_ERROR;
+            goto out;
     }
 
     if (context->body_started == 0) {
-        content_encoding_t encoding = (content_encoding_t) body_started(context->id);
-        if (message_inflate_init(context, encoding) != 0) {
-            throw_error(context, direction, PARSER_DECODE_ERROR, context->zlib_stream.msg);
-            return 1;
+        context->need_decode = body_started(context);
+        if (context->need_decode) {
+            if (message_inflate_init(context) != 0) {
+                set_error(context, PARSER_ZLIB_ERROR, context->zlib_stream.msg);
+                r = PARSER_ZLIB_ERROR;
+                goto out;
+            }
         }
         context->body_started = 1;
     }
     if (context->content_encoding == CONTENT_ENCODING_IDENTITY) {
-        body_data(context->id, at, length);
+        body_data(context, at, length);
     } else {
         if (message_inflate(context, at, length, body_data) != 0) {
-            throw_error(context, direction, PARSER_DECODE_ERROR, context->zlib_stream.msg);
-            return 1;
+            set_error(context, PARSER_ZLIB_ERROR, context->zlib_stream.msg);
+            return PARSER_ZLIB_ERROR;
         }
     }
 
-    return 0;
+    out:
+    logger_log(LOG_LEVEL_TRACE, "http_parser_on_body() returned %d", -1);
+    return r;
 }
 
-static void throw_error(connection_context *context, transfer_direction_t direction, error_type_t type, const char *msg) {
-    char error_message[256];
+static void set_error(connection_context *context, error_type_t type, const char *msg) {
+    context->error_type = type;
     snprintf(context->error_message, 256, "%s", msg);
-    context->callbacks->parse_error(context->id, direction, type, error_message);
 }
 
 /**
  * Initialize Zlib stream depending on Content-Encoding (gzip/deflate)
  * @param context Connection context
- * @param encoding Content encoding
  */
-static int message_inflate_init(connection_context *context, content_encoding_t encoding) {
-    context->content_encoding = encoding;
-    if (encoding == CONTENT_ENCODING_IDENTITY) {
+static int message_inflate_init(connection_context *context) {
+    context->content_encoding = get_content_encoding(context);
+    if (!context->need_decode || context->content_encoding == CONTENT_ENCODING_IDENTITY) {
         // Uncompressed
         context->decode_in_buffer = NULL;
         context->decode_out_buffer = NULL;
@@ -436,13 +459,27 @@ static int message_inflate_init(connection_context *context, content_encoding_t 
     context->decode_out_buffer = malloc(ZLIB_DECOMPRESS_CHUNK_SIZE);
     memset(context->decode_out_buffer, 0, ZLIB_DECOMPRESS_CHUNK_SIZE);
 
-    switch (encoding) {
+    switch (context->content_encoding) {
         case CONTENT_ENCODING_DEFLATE:
             return inflateInit(&context->zlib_stream);
         case CONTENT_ENCODING_GZIP:
             return inflateInit2(&context->zlib_stream, 16 + MAX_WBITS);
         default:
             return 0;
+    }
+}
+
+static content_encoding_t get_content_encoding(connection_context *context) {
+    http_message *message = context->message;
+    char *field_name = "Content-Encoding";
+    size_t value_length;
+    const char *value = http_message_get_header_field(message, field_name, strlen(field_name), &value_length);
+    if (!strncasecmp(value, "gzip", value_length) || !strncasecmp(value, "x-gzip", value_length)) {
+        return CONTENT_ENCODING_GZIP;
+    } else if (!strncasecmp(value, "deflate", value_length)) {
+        return CONTENT_ENCODING_DEFLATE;
+    } else {
+        return CONTENT_ENCODING_IDENTITY;
     }
 }
 
@@ -468,7 +505,7 @@ static int message_inflate(connection_context *context, const char *data, size_t
             result = Z_BUF_ERROR;
             goto error;
         }
-        memcpy(context->decode_in_buffer + context->zlib_stream.avail_in, (int) data, length);
+        memcpy(context->decode_in_buffer + context->zlib_stream.avail_in, data, length);
         context->zlib_stream.avail_in += (uInt) length;
     } else {
         context->zlib_stream.next_in = (Bytef *) data;
@@ -485,7 +522,7 @@ static int message_inflate(connection_context *context, const char *data, size_t
             size_t processed = ZLIB_DECOMPRESS_CHUNK_SIZE - context->zlib_stream.avail_out;
             if (processed > 0) {
                 // Call callback function for each decompressed block
-                body_data(context->id, context->decode_out_buffer, processed);
+                body_data(context, context->decode_out_buffer, processed);
             }
         }
         if (result != Z_OK) {
@@ -530,10 +567,10 @@ int http_parser_on_message_complete(http_parser *parser) {
     if (context->have_body) {
         switch (parser->type) {
             case HTTP_REQUEST:
-                context->callbacks->http_request_body_finished(context->id);
+                context->callbacks->http_request_body_finished(context);
                 break;
             case HTTP_RESPONSE:
-                context->callbacks->http_response_body_finished(context->id);
+                context->callbacks->http_response_body_finished(context);
                 break;
             default:
                 break;
@@ -548,7 +585,7 @@ int http_parser_on_message_complete(http_parser *parser) {
     context->message = 0;
     context->have_body = 0;
     context->body_started = 0;
-    context->content_encoding = 0;
+    context->content_encoding = CONTENT_ENCODING_IDENTITY;
 
     /* Re-init parser before next message. */
     http_parser_init(parser, HTTP_BOTH);
@@ -583,22 +620,53 @@ http_parser_settings _settings = {
 };
 
 /*
- *  API implementaion:
+ *  API implementation
  */
-int parser_connect(connection_id_t id, connection_info *info,
-            parser_callbacks *callbacks) {
-    connection_context *context = context_by_id_get(id);
+
+int parser_create(parser_context **p_parser_ctx) {
+    if (p_parser_ctx == NULL) {
+        return PARSER_NULL_POINTER_ERROR;
+    }
+
+    *p_parser_ctx = calloc(1, sizeof(parser_context));
+
+    if (!logger_is_open()) {
+        logger_open(NULL, LOG_LEVEL_TRACE, NULL);
+    }
+    logger_log(LOG_LEVEL_TRACE, "parser_create()");
+
+    return 0;
+}
+
+int parser_destroy(parser_context *parser_ctx) {
+    logger_log(LOG_LEVEL_TRACE, "parser_destroy()");
+    if (parser_ctx->context_by_id_hash_initialized) {
+        for (int i = 0; i < HASH_SIZE; i++) {
+            struct connection_context *context;
+            TAILQ_FOREACH(context, &parser_ctx->context_by_id_hash[i], context_by_id_entry) {
+                parser_connection_close(context);
+            }
+        }
+    }
+    logger_log(LOG_LEVEL_TRACE, "parser_destroy() finished.");
+}
+
+int parser_connect(parser_context *parser_ctx, connection_id_t id, parser_callbacks *callbacks, connection_context **p_context) {
+    logger_log(LOG_LEVEL_TRACE, "parser_connect(id=%d, callbacks=%p, p_context=%p)", (int)id, callbacks, p_context);
+    connection_context *context = context_by_id_get(parser_ctx, id);
     if (context != NULL) {
         // Already connected
         // TODO: report error?
-        return 1;
+        set_error(context, PARSER_ALREADY_CONNECTED_ERROR, "Already connected");
+        logger_log(LOG_LEVEL_TRACE, "error: already connected!");
+        logger_log(LOG_LEVEL_TRACE, "parser_connect() returned %d", context->error_type);
+        return context->error_type;
     }
     
     context = malloc(sizeof(connection_context));
     memset(context, 0, sizeof(connection_context));
 
     context->id = id;
-    context->info = info;
     context->callbacks = callbacks;
 
     context->settings = &_settings;
@@ -606,53 +674,70 @@ int parser_connect(connection_id_t id, connection_info *info,
 
     context->parser->data = context;
     
-    context_by_id_add(context);
+    context_by_id_add(parser_ctx, context);
     http_parser_init(context->parser, HTTP_BOTH);
 
+    if (p_context != NULL) {
+        logger_log(LOG_LEVEL_TRACE, "setting *p_context to %p", context);
+        *p_context = context;
+    } else {
+        set_error(context, PARSER_NULL_POINTER_ERROR, "p_context");
+        return context->error_type;
+    }
+
+    logger_log(LOG_LEVEL_TRACE, "parser_connect() returned %d", 0);
     return 0;
 }
 
-int parser_disconnect(connection_id_t id, transfer_direction_t direction) {
+int parser_disconnect(connection_context *context, transfer_direction_t direction) {
+    logger_log(LOG_LEVEL_TRACE, "parser_disconnect(context=%p, direction=%d)", context, (int) direction);
     // connection_context *context = context_by_id_remove(id);
     // TODO: free context structures
+    logger_log(LOG_LEVEL_TRACE, "parser_disconnect() returned %d", 0);
     return 0;
 }
 
 #define INPUT_LENGTH_AT_ERROR 1
 
-int parser_input(connection_id_t id, transfer_direction_t direction, const char *data,
+int parser_input(connection_context *context, transfer_direction_t direction, const char *data,
           size_t length) {
-    connection_context *context = context_by_id_get(id);
-    if (context == NULL) {
-        return 1;
-    }
-
+    logger_log(LOG_LEVEL_TRACE, "parser_input(context=%p, direction=%d, len=%d)", context, (int) direction, (int) length);
     // TODO: this is wrong, null bytes are allowed in content
     context->done = 0;
 
     if (HTTP_PARSER_ERRNO(context->parser) != HPE_OK) {
-        http_parser_init(context->parser, HTTP_BOTH);
+        http_parser_init(context->parser, direction == DIRECTION_OUT ? HTTP_REQUEST : HTTP_RESPONSE);
     }
 
     context->done = http_parser_execute(context->parser, context->settings,
                                          data, length);
 
+    int r = 0;
     while (context->done < length)
     {
         if (HTTP_PARSER_ERRNO(context->parser) != HPE_OK) {
-            throw_error(context, direction, PARSER_HTTP_ERROR, http_errno_name(HTTP_PARSER_ERRNO(context->parser)));
-            http_parser_init(context->parser, HTTP_BOTH);
+            enum http_errno http_parser_errno = HTTP_PARSER_ERRNO(context->parser);
+            if (http_parser_errno != HPE_CB_body) {
+                // If body data callback fails, then get saved error from structure, don't overwrite
+                set_error(context, PARSER_HTTP_PARSE_ERROR, http_errno_name(http_parser_errno));
+                r = PARSER_HTTP_PARSE_ERROR;
+            } else {
+                r = context->error_type;
+            }
+
+            http_parser_init(context->parser, direction == DIRECTION_OUT ? HTTP_REQUEST : HTTP_RESPONSE);
         }
         http_parser_execute(context->parser, context->settings,
                              data + context->done, INPUT_LENGTH_AT_ERROR);
         context->done+=INPUT_LENGTH_AT_ERROR;
     }
 
-    return 0;
+    logger_log(LOG_LEVEL_TRACE, "parser_input() returned %d", r);
+    return r;
 }
 
-int parser_connection_close(connection_id_t id) {
-    connection_context *context = context_by_id_remove(id);
+int parser_connection_close(connection_context *context) {
+    context_by_id_remove(context->parser_ctx, context->id);
     return 0;
 }
 
@@ -737,14 +822,17 @@ int http_message_set_header_field(http_message *message,
     return  1;
 }
 
-const char *http_message_get_header_field(const http_message *message,
-                                          const char *name, size_t length) {
+const char *http_message_get_header_field(const http_message *message, const char *name,
+                                          size_t name_length, size_t *p_value_length) {
     char *value;
-    if (message == NULL || name == NULL || length == 0) return NULL;
+    if (message == NULL || name == NULL || name_length == 0) return NULL;
     for (int i = 0; i < message->field_count; i++) {
-        if (strncmp(message->fields[i].name, name, length) == 0) {
+        if (strncmp(message->fields[i].name, name, name_length) == 0) {
             set_chars(&value, message->fields[i].value,
                       strlen(message->fields[i].value));
+            if (p_value_length != NULL) {
+                *p_value_length = strlen(value);
+            }
             return value;
         }
     }
@@ -786,7 +874,7 @@ int http_message_del_header_field(http_message *message,
     return 1;
 }
 
-char *http_message_raw(const http_message *message, size_t *out_length) {
+char *http_message_raw(const http_message *message, size_t *p_length) {
     char *out_buffer;
     int length, line_length = 0;
 
@@ -822,6 +910,8 @@ char *http_message_raw(const http_message *message, size_t *out_length) {
     snprintf(out_buffer + length, 3, "\r\n");
     length += 2;
 
-    *out_length = length;
+    if (p_length != NULL) {
+        *p_length = length;
+    }
     return out_buffer;
 }

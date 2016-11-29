@@ -60,8 +60,12 @@ typedef enum {
  * DECODE - zlib error
  */
 typedef enum {
-    PARSER_HTTP_ERROR = 0,
-    PARSER_DECODE_ERROR
+    PARSER_OK = 0,
+    PARSER_ALREADY_CONNECTED_ERROR = 101,
+    PARSER_HTTP_PARSE_ERROR = 102,
+    PARSER_ZLIB_ERROR = 103,
+    PARSER_NULL_POINTER_ERROR = 104,
+    PARSER_INVALID_ARGUMENT_ERROR = 105
 } error_type_t;
 
 /**
@@ -75,72 +79,60 @@ typedef enum {
     callback should return non-zero code;
     In all other cases you should return 0. */
 typedef int (*parser_cb)(connection_id_t id, void *data, size_t length);
+typedef struct connection_context connection_context;
+typedef struct parser_context parser_context;
 
 typedef struct {
     /**
      * HTTP request received callback
-     * @param id Connection id
-     * @param header http_header structure
+     * @param context Connection context
+     * @param message http_message structure
      * @return Non-null value if we are skipping this request
      */
-    int (*http_request_received)(connection_id_t id, void *header);
+    int (*http_request_received)(connection_context *context, void *message);
     /**
      * HTTP request body started callback
-     * @param id Connection id
-     * @return Body compression type
-     *          0 means uncompressed
-     *          1 means zlib compression with deflate format
-     *          2 means zlib compression with gzip format
+     * @param context Connection context
+     * @return boolean value, 0 if decode is not needed, 1 if needed.
      */
-    int (*http_request_body_started)(connection_id_t id);
+    int (*http_request_body_started)(connection_context *context);
     /**
      * HTTP request body data callback
-     * @param id Connection id
+     * @param context Connection context
      * @param data Chunk of data (doesn't correspond to any HTTP chunk, just part of decoded stream)
      * @param length Length of data chunk
      */
-    void (*http_request_body_data)(connection_id_t id, const char *data, size_t length);
+    void (*http_request_body_data)(connection_context *context, const char *data, size_t length);
     /**
      * HTTP request body finished callback
-     * @param id Connection id
+     * @param context Connection context
      */
-    void (*http_request_body_finished)(connection_id_t id);
+    void (*http_request_body_finished)(connection_context *context);
     /**
      * HTTP response received callback
-     * @param id Connection id
-     * @param header http_header structure
+     * @param context Connection context
+     * @param message http_message structure
      * @return Non-null value if we are skipping this request/response
      */
-    int (*http_response_received)(connection_id_t id, void *header);
+    int (*http_response_received)(connection_context *context, void *message);
     /**
      * HTTP response body started callback
      * @param id Connection id
-     * @return Body compression type
-     *          0 means uncompressed
-     *          1 means zlib compression with deflate format
-     *          2 means zlib compression with gzip format
+     * @return boolean value, 0 if decode is not needed, 1 if needed.
      */
-    int (*http_response_body_started)(connection_id_t id);
+    int (*http_response_body_started)(connection_context *context);
     /**
      * HTTP response body data callback
      * @param id Connection id
      * @param data Chunk of data (doesn't correspond to any real HTTP chunk, just part of decoded stream)
      * @param length Length of data chunk
      */
-    void (*http_response_body_data)(connection_id_t id, const char *data, size_t length);
+    void (*http_response_body_data)(connection_context *context, const char *data, size_t length);
     /**
      * HTTP response body finished callback
      * @param id Connection id
      */
-    void (*http_response_body_finished)(connection_id_t id);
-
-    /**
-     * HTTP parser error
-     * @param id Connection id
-     * @param type Error type (HTTP parser/decode)
-     * @param message Error message
-     */
-    void (*parse_error)(connection_id_t id, transfer_direction_t direction, error_type_t type, const char *message);
+    void (*http_response_body_finished)(connection_context *context);
 } parser_callbacks;
 
 /*
@@ -148,14 +140,26 @@ typedef struct {
  */
 
 /**
+ * Creates new HTTP parser
+ * @param context Pointer to variable where parser context will be stored
+ * @return 0 if success
+ */
+int parser_create(parser_context **p_parser_ctx);
+
+/**
+ * Destroys HTTP parser
+ * @param context Pointer to parser context
+ * @return 0 if success
+ */
+int parser_destroy(parser_context *parser_ctx);
+
+/**
  * Create new connection and set callbacks for it
  * @param id Connection id
- * @param info Connection info (endpoint names, currently is not used
  * @param callbacks Connection callbacks
  * @return 0 if success
  */
-int parser_connect(connection_id_t id, connection_info *info,
-            parser_callbacks *callbacks);
+int parser_connect(parser_context *parser_ctx, connection_id_t id, parser_callbacks *callbacks, connection_context **p_context);
 
 /**
  * Mark one side of connection as disconnected.
@@ -166,7 +170,7 @@ int parser_connect(connection_id_t id, connection_info *info,
  * @param direction Transfer direction
  * @return 0 if success
  */
-int parser_disconnect(connection_id_t id, transfer_direction_t direction);
+int parser_disconnect(connection_context *context, transfer_direction_t direction);
 
 /**
  * Process HTTP input data
@@ -176,61 +180,25 @@ int parser_disconnect(connection_id_t id, transfer_direction_t direction);
  * @param length Data length
  * @return 0 if success
  */
-int parser_input(connection_id_t id, transfer_direction_t direction, const char *data,
+int parser_input(connection_context *context, transfer_direction_t direction, const char *data,
           size_t length);
 
 /**
  * Closes connection
- * @param id Connection id
+ * @param context Connection context
  * @return 0 if success
  */
-int parser_connection_close(connection_id_t id);
+int parser_connection_close(connection_context *context);
 
 /**
  * Utility methods
  */
 /**
- * Create new connection and set callbacks for it
- * @param id Connection id
- * @param info Connection info (endpoint names, currently is not used
- * @param callbacks Connection callbacks
- * @return 0 if success
+ * Creates empty HTTP message
+ * @return Pointer to new message. Should be freed by http_message_free()
  */
-int parser_connect(connection_id_t id, connection_info *info,
-                   parser_callbacks *callbacks);
+http_message *http_message_create();
 
-/**
- * Mark one side of connection as disconnected.
- * If remote connection is disconnected, its state is reset
- * If local connection is disconnected, wait for remote connection state reset and deallocate
- * corresponding data structures
- * @param id Connection id
- * @param direction Transfer direction
- * @return 0 if success
- */
-int parser_disconnect(connection_id_t id, transfer_direction_t direction);
-
-/**
- * Process HTTP input data
- * @param id Connection id
- * @param direction Transfer direction
- * @param data Chunk data
- * @param length Data length
- * @return 0 if success
- */
-int parser_input(connection_id_t id, transfer_direction_t direction, const char *data,
-                 size_t length);
-
-/**
- * Closes connection
- * @param id Connection id
- * @return 0 if success
- */
-int parser_connection_close(connection_id_t id);
-
-/**
- * Utility methods
- */
 /**
  * Makes copy of HTTP message
  * @param source Pointer to original message
@@ -297,13 +265,13 @@ int http_message_set_header_field(http_message *message,
 
 /**
  * Gets header field value of header section of HTTP message
- * @param message Ponter to HTTP message
+ * @param message Pointer to HTTP message
  * @param name Field name (character array)
- * @param length Length of field name character array
+ * @param name_length Length of field name character array
  * @return 0 if success
  */
-const char * http_message_get_header_field(const http_message *message,
-                                           const char *name, size_t length);
+const char *http_message_get_header_field(const http_message *message, const char *name,
+                                          size_t name_length, size_t *p_value_length);
 
 /**
  * Adds new header field at header section of HTTP message
@@ -330,10 +298,10 @@ int http_message_del_header_field(http_message *message,
  * Serializes HTTP message header section, including request/response line,
  * header fields and the ending CRLF
  * @param message Pointer to HTTP message
- * @param length Pointer to size_t variable where length of output will be written
+ * @param p_length Pointer to size_t variable where length of output will be written
  * @return Character array containing serialized HTTP message
  */
-char *http_message_raw(const http_message *message, size_t *length);
+char *http_message_raw(const http_message *message, size_t *p_length);
 
 #ifdef __cplusplus
 }

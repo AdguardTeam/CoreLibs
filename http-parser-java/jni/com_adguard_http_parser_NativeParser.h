@@ -9,11 +9,19 @@ extern "C" {
 #endif
 /*
  * Class:     com_adguard_http_parser_NativeParser
- * Method:    connect
- * Signature: (JLcom/adguard/http/parser/NativeParser/Callbacks;)I
+ * Method:    init
+ * Signature: (Lcom/adguard/http/parser/NativeParser;)V
  */
-JNIEXPORT jint JNICALL Java_com_adguard_http_parser_NativeParser_connect
-  (JNIEnv *, jclass, jlong, jobject);
+JNIEXPORT void JNICALL Java_com_adguard_http_parser_NativeParser_init
+  (JNIEnv *, jclass, jobject);
+
+/*
+ * Class:     com_adguard_http_parser_NativeParser
+ * Method:    connect
+ * Signature: (JJLcom/adguard/http/parser/NativeParser/Callbacks;)J
+ */
+JNIEXPORT jlong JNICALL Java_com_adguard_http_parser_NativeParser_connect
+  (JNIEnv *, jclass, jlong, jlong, jobject);
 
 /*
  * Class:     com_adguard_http_parser_NativeParser
@@ -33,11 +41,27 @@ JNIEXPORT jint JNICALL Java_com_adguard_http_parser_NativeParser_input0
 
 /*
  * Class:     com_adguard_http_parser_NativeParser
- * Method:    close
+ * Method:    closeConnection
  * Signature: (J)I
  */
-JNIEXPORT jint JNICALL Java_com_adguard_http_parser_NativeParser_close
-  (JNIEnv *, jobject, jlong);
+JNIEXPORT jint JNICALL Java_com_adguard_http_parser_NativeParser_closeConnection
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     com_adguard_http_parser_NativeParser
+ * Method:    getConnectionId
+ * Signature: (J)J
+ */
+JNIEXPORT jlong JNICALL Java_com_adguard_http_parser_NativeParser_getConnectionId
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     com_adguard_http_parser_NativeParser
+ * Method:    closeParser
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_com_adguard_http_parser_NativeParser_closeParser
+  (JNIEnv *, jclass, jlong);
 
 #ifdef __cplusplus
 }
