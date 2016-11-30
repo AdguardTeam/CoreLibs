@@ -223,16 +223,19 @@ jlong Java_com_adguard_http_parser_NativeParser_getConnectionId(JNIEnv *env, jcl
     return (jlong) context->id;
 }
 
-void Java_com_adguard_http_parser_NativeParser_init(JNIEnv *env, jclass cls, jobject parser) {
+void Java_com_adguard_http_parser_NativeParser_init(JNIEnv *env, jclass cls, jobject parser, jlong loggerPtr) {
     fprintf(stderr, "NativeParser.init()\n");
-    jfieldID field = env->GetFieldID(cls, "nativePtr", "J");
-    if (field == NULL) {
+
+    jfieldID parserCtxPtr = env->GetFieldID(cls, "parserCtxPtr", "J");
+    if (parserCtxPtr == NULL) {
         return;
     }
+
+    logger *log = (logger *) loggerPtr;
     parser_context *parser_ctx;
-    int r = parser_create(&parser_ctx);
+    int r = parser_create(log, &parser_ctx);
     if (r == 0) {
-        env->SetLongField(parser, field, (jlong) parser_ctx);
+        env->SetLongField(parser, parserCtxPtr, (jlong) parser_ctx);
     } else {
         env->ThrowNew(env->FindClass("java/io/Exception"), "NativeParser()");
     }

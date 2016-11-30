@@ -10,10 +10,10 @@ extern "C" {
 /*
  * Class:     com_adguard_http_parser_NativeParser
  * Method:    init
- * Signature: (Lcom/adguard/http/parser/NativeParser;)V
+ * Signature: (Lcom/adguard/http/parser/NativeParser;J)V
  */
 JNIEXPORT void JNICALL Java_com_adguard_http_parser_NativeParser_init
-  (JNIEnv *, jclass, jobject);
+  (JNIEnv *, jclass, jobject, jlong);
 
 /*
  * Class:     com_adguard_http_parser_NativeParser

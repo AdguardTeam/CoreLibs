@@ -32,7 +32,7 @@ public class TestHttpClient {
 		ch.write(buf);
 		buf = ByteBuffer.allocateDirect(65536);
 
-		Parser parser = new NativeParser();
+		Parser parser = new NativeParser(NativeLogger.open(NativeLogger.LogLevel.DEBUG));
 		Parser.Connection parserConnection = parser.connect(requestId, new HttpClientCallbacks());
 		while (true) {
 			buf.clear();

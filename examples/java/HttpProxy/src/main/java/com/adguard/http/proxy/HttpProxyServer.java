@@ -23,6 +23,8 @@ import java.util.regex.Pattern;
 public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 
 	private static final Logger log = LoggerFactory.getLogger(HttpProxyServer.class);
+	private static final Logger parserLog = LoggerFactory.getLogger("NativeParser");
+
 	private static final byte[] EMPTY_CHUNK_DATA = new byte[0];
 	private static final String HTTP_METHOD_CONNECT = "CONNECT";
 
@@ -34,7 +36,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 
 	HttpProxyServer(InetSocketAddress bindAddress) throws IOException {
 		super(bindAddress);
-		this.parser = new NativeParser();
+		this.parser = new NativeParser(NativeLogger.open(NativeLogger.LogLevel.DEBUG, new LoggerCallback()));
 	}
 
 	@Override
@@ -405,6 +407,26 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		for (HttpProxyContext context : contexts.values()) {
 			// TODO: wait for queue flushing
 			context.close();
+		}
+	}
+
+	class LoggerCallback implements NativeLogger.Callback {
+		@Override
+		public void log(NativeLogger.LogLevel logLevel, String threadInfo, String message) {
+			message = "" + threadInfo + " " + message;
+			switch (logLevel) {
+				case ERROR:
+					parserLog.error(message);
+					break;
+				case WARN:
+					parserLog.warn(message);
+				case INFO:
+					parserLog.info(message);
+				case DEBUG:
+					parserLog.debug(message);
+				case TRACE:
+
+			}
 		}
 	}
 }

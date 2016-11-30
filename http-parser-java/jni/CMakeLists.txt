@@ -13,7 +13,9 @@ set(SOURCE_FILES
         com_adguard_http_parser_HttpMessage_HttpHeaderField.h
         com_adguard_http_parser_NativeParser.h
         com_adguard_http_parser_NativeParser_Callbacks.h
-        parser.cpp)
+        parser.cpp
+        com_adguard_http_parser_NativeLogger.h
+        logger.cpp)
 
 
 add_library(httpparser-jni SHARED ${SOURCE_FILES})

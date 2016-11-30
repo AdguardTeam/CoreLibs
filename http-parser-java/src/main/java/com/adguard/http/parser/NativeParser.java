@@ -11,19 +11,19 @@ public class NativeParser implements Parser {
 		System.loadLibrary("httpparser-jni");
 	}
 
-	private long nativePtr;
+	private long parserCtxPtr;
 
-	private static native void init(NativeParser parser);
+	private static native void init(NativeParser parser, long logger);
 
-	public NativeParser() {
-		init(this);
+	public NativeParser(NativeLogger logger) {
+		init(this, logger.nativePtr);
 	}
 
 	public static native synchronized long connect(long parserNativePtr, long id, Callbacks callbacks);
 
 	@Override
 	public NativeConnection connect(long id, ParserCallbacks callbacks) {
-		return new NativeConnection(connect(nativePtr, id, new Callbacks(callbacks)));
+		return new NativeConnection(connect(parserCtxPtr, id, new Callbacks(callbacks)));
 	}
 
 	public native static synchronized int disconnect0(long connectionNativePtr, int direction);
@@ -53,7 +53,7 @@ public class NativeParser implements Parser {
 
 	@Override
 	public void close() throws IOException {
-		closeParser(nativePtr);
+		closeParser(parserCtxPtr);
 	}
 
 	private static class Callbacks {

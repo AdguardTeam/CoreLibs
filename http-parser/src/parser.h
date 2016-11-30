@@ -81,6 +81,7 @@ typedef enum {
 typedef int (*parser_cb)(connection_id_t id, void *data, size_t length);
 typedef struct connection_context connection_context;
 typedef struct parser_context parser_context;
+typedef struct logger logger;
 
 typedef struct {
     /**
@@ -144,7 +145,7 @@ typedef struct {
  * @param context Pointer to variable where parser context will be stored
  * @return 0 if success
  */
-int parser_create(parser_context **p_parser_ctx);
+int parser_create(logger *log, parser_context **p_parser_ctx);
 
 /**
  * Destroys HTTP parser
