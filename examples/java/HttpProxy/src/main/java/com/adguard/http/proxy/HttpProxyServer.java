@@ -36,7 +36,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 
 	HttpProxyServer(InetSocketAddress bindAddress) throws IOException {
 		super(bindAddress);
-		this.parser = new NativeParser(NativeLogger.open(NativeLogger.LogLevel.DEBUG, new LoggerCallback()));
+		this.parser = new NativeParser(NativeLogger.open(NativeLogger.LogLevel.TRACE, new LoggerCallback()));
 	}
 
 	@Override
@@ -410,7 +410,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		}
 	}
 
-	class LoggerCallback implements NativeLogger.Callback {
+	static class LoggerCallback implements NativeLogger.Callback {
 		@Override
 		public void log(NativeLogger.LogLevel logLevel, String threadInfo, String message) {
 			message = "" + threadInfo + " " + message;
@@ -420,12 +420,16 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 					break;
 				case WARN:
 					parserLog.warn(message);
+					break;
 				case INFO:
 					parserLog.info(message);
+					break;
 				case DEBUG:
 					parserLog.debug(message);
+					break;
 				case TRACE:
-
+					parserLog.trace(message);
+					break;
 			}
 		}
 	}

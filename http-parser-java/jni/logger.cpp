@@ -6,7 +6,7 @@
 #include "../../http-parser/src/logger.h"
 
 struct LoggerCtx {
-    JNIEnv *env;
+    JavaVM *vm;
     jobject callbackObject;
     jmethodID callbackMethod;
 };
@@ -17,9 +17,20 @@ extern "C" {
 
 void NativeLogger_callback(logger *ctx, logger_log_level_t log_level, const char *thread_info, const char *message) {
     LoggerCtx *loggerCtx = (LoggerCtx *) ctx->attachment;
-    loggerCtx->env->CallVoidMethod(loggerCtx->callbackObject, loggerCtx->callbackMethod, (int) log_level,
-                                   loggerCtx->env->NewStringUTF(thread_info),
-                                   loggerCtx->env->NewStringUTF(message));
+    JNIEnv *env;
+    if (loggerCtx->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+        return;
+    }
+
+    jstring threadInfoString = thread_info ? env->NewStringUTF(thread_info) : NULL;
+    jstring messageString = message ? env->NewStringUTF(message) : NULL;
+
+    env->CallVoidMethod(loggerCtx->callbackObject, loggerCtx->callbackMethod, (int) log_level,
+                                   threadInfoString, messageString);
+
+    env->DeleteLocalRef(threadInfoString);
+    env->DeleteLocalRef(messageString);
+    loggerCtx->vm->DetachCurrentThread();
 }
 
 jobject Java_com_adguard_http_parser_NativeLogger_open0(JNIEnv *env, jclass cls, jint logLevel, jobject callback) {
@@ -29,14 +40,14 @@ jobject Java_com_adguard_http_parser_NativeLogger_open0(JNIEnv *env, jclass cls,
     }
 
     LoggerCtx *loggerCtx = new LoggerCtx;
-    loggerCtx->callbackObject = callback;
+    loggerCtx->callbackObject = env->NewGlobalRef(callback);
     jclass callbackClass = env->FindClass("com/adguard/http/parser/NativeLogger$NativeCallback");
     if (callbackClass == NULL) {
         delete loggerCtx;
         return NULL;
     }
     loggerCtx->callbackMethod = env->GetMethodID(callbackClass, "log", "(ILjava/lang/String;Ljava/lang/String;)V");
-    loggerCtx->env = env;
+    env->GetJavaVM(&loggerCtx->vm);
 
     logger *log = logger_open(NULL, (logger_log_level_t) logLevel, NativeLogger_callback, loggerCtx);
 

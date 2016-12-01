@@ -40,6 +40,12 @@ public class NativeLoggerTest {
 			logger.log(NativeLogger.LogLevel.TRACE, "test-trace");
 			logger.log(NativeLogger.LogLevel.INFO, "test-info");
 			logger.log(NativeLogger.LogLevel.WARN, "test-warn");
+			logger.log(NativeLogger.LogLevel.TRACE, "test-trace");
+			logger.log(NativeLogger.LogLevel.INFO, "test-info");
+			logger.log(NativeLogger.LogLevel.WARN, "test-warn");
+			logger.log(NativeLogger.LogLevel.TRACE, "test-trace");
+			logger.log(NativeLogger.LogLevel.INFO, "test-info");
+			logger.log(NativeLogger.LogLevel.WARN, "test-warn");
 		}
 	}
 }

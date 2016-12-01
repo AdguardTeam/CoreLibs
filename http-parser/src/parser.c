@@ -49,6 +49,8 @@
 
 #define DBG_LINE do { fprintf(stderr, __FUNCTION__ ":%d\n", __LINE__); } while(0)
 
+static const char EMPTY_CSTRING[1] = {0};
+
 /*
  * Utility functions
  */
@@ -446,6 +448,7 @@ static void set_error(connection_context *context, error_type_t type, const char
  * @param context Connection context
  */
 static int message_inflate_init(connection_context *context) {
+    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "message_inflate_init()");
     context->content_encoding = get_content_encoding(context);
     if (!context->need_decode || context->content_encoding == CONTENT_ENCODING_IDENTITY) {
         // Uncompressed
@@ -460,14 +463,21 @@ static int message_inflate_init(connection_context *context) {
     context->decode_out_buffer = malloc(ZLIB_DECOMPRESS_CHUNK_SIZE);
     memset(context->decode_out_buffer, 0, ZLIB_DECOMPRESS_CHUNK_SIZE);
 
+    int r;
     switch (context->content_encoding) {
         case CONTENT_ENCODING_DEFLATE:
-            return inflateInit(&context->zlib_stream);
+            r = inflateInit(&context->zlib_stream);
+            break;
         case CONTENT_ENCODING_GZIP:
-            return inflateInit2(&context->zlib_stream, 16 + MAX_WBITS);
+            r = inflateInit2(&context->zlib_stream, 16 + MAX_WBITS);
+            break;
         default:
-            return 0;
+            r = 0;
+            break;
     }
+
+    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "message_inflate_init() returned %d", r);
+    return r;
 }
 
 static content_encoding_t get_content_encoding(connection_context *context) {
@@ -493,6 +503,7 @@ static content_encoding_t get_content_encoding(connection_context *context) {
  * @return 0 if data is successfully decompressed, 1 in case of error
  */
 static int message_inflate(connection_context *context, const char *data, size_t length, body_data_callback body_data) {
+    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "message_inflate(data=%p, length=%d)", data, (int) length);
     int result;
 
     if (context->decode_out_buffer == NULL) {
@@ -823,16 +834,14 @@ int http_message_set_header_field(http_message *message,
 
 const char *http_message_get_header_field(const http_message *message, const char *name,
                                           size_t name_length, size_t *p_value_length) {
-    char *value;
+    char *value = NULL;
     if (message == NULL || name == NULL || name_length == 0) return NULL;
     for (int i = 0; i < message->field_count; i++) {
         if (strncmp(message->fields[i].name, name, name_length) == 0) {
-            set_chars(&value, message->fields[i].value,
-                      strlen(message->fields[i].value));
-            if (p_value_length != NULL) {
-                *p_value_length = strlen(value);
+            if (message->fields[i].value) {
+                return message->fields[i].value;
             }
-            return value;
+            return EMPTY_CSTRING;
         }
     }
     return NULL;
