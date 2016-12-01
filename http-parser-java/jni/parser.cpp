@@ -9,7 +9,7 @@
 #include "../../http-parser/src/parser.h"
 
 typedef struct {
-    JNIEnv *env;
+    JavaVM *vm;
     jobject callbacks;
 } ParserContext;
 
@@ -72,7 +72,7 @@ jlong Java_com_adguard_http_parser_NativeParser_connect(JNIEnv *env, jclass cls,
         context = context_map[id] = new ParserContext;
     }
 
-    context->env = env;
+    env->GetJavaVM(&context->vm);
     context->callbacks = env->NewGlobalRef(callbacks);
 
     connection_info *info = new connection_info;
@@ -101,7 +101,13 @@ static int NativeParser_HttpRequestReceived(connection_context *connection_ctx, 
     }
 
     http_message *clone = http_message_clone((const http_message *) message);
-    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestReceivedCallback, connection_ctx->id, (jlong) clone);
+    JNIEnv *env;
+    if (context->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+        throw std::runtime_error("Can't attach to Java VM");
+    }
+    int r = env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestReceivedCallback, connection_ctx->id, (jlong) clone);
+    context->vm->DetachCurrentThread();
+    return r;
 }
 
 static int NativeParser_HttpRequestBodyStarted(connection_context *connection_ctx) {
@@ -110,7 +116,13 @@ static int NativeParser_HttpRequestBodyStarted(connection_context *connection_ct
         return -1;
     }
 
-    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestBodyStartedCallback, connection_ctx->id);
+    JNIEnv *env;
+    if (context->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+        throw std::runtime_error("Can't attach to Java VM");
+    }
+    int r = env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestBodyStartedCallback, connection_ctx->id);
+    context->vm->DetachCurrentThread();
+    return r;
 }
 
 static void NativeParser_HttpRequestBodyData(connection_context *connection_ctx, const char *data, size_t length) {
@@ -119,12 +131,17 @@ static void NativeParser_HttpRequestBodyData(connection_context *connection_ctx,
         return;
     }
 
-    jbyteArray arr = context->env->NewByteArray((jsize) length);
-    context->env->SetByteArrayRegion(arr, 0, (jsize) length, (jbyte *) data);
-    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyDataCallback, connection_ctx->id, arr);
+    JNIEnv *env;
+    if (context->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+        throw std::runtime_error("Can't attach to Java VM");
+    }
+    jbyteArray arr = env->NewByteArray((jsize) length);
+    env->SetByteArrayRegion(arr, 0, (jsize) length, (jbyte *) data);
+    env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyDataCallback, connection_ctx->id, arr);
 
     // JNI will not auto clean local references since this method wasn't invoked from JVM
-    context->env->DeleteLocalRef(arr);
+    env->DeleteLocalRef(arr);
+    context->vm->DetachCurrentThread();
 }
 
 static void NativeParser_HttpRequestBodyFinished(connection_context *connection_ctx) {
@@ -133,7 +150,12 @@ static void NativeParser_HttpRequestBodyFinished(connection_context *connection_
         return;
     }
 
-    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyFinishedCallback, connection_ctx->id);
+    JNIEnv *env;
+    if (context->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+        throw std::runtime_error("Can't attach to Java VM");
+    }
+    env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyFinishedCallback, connection_ctx->id);
+    context->vm->DetachCurrentThread();
 }
 
 static int NativeParser_HttpResponseReceived(connection_context *connection_ctx, void *message) {
@@ -143,7 +165,14 @@ static int NativeParser_HttpResponseReceived(connection_context *connection_ctx,
     }
 
     http_message *clone = http_message_clone((const http_message *) message);
-    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseReceivedCallback, connection_ctx->id, (jlong) clone);
+
+    JNIEnv *env;
+    if (context->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+        throw std::runtime_error("Can't attach to Java VM");
+    }
+    int r = env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseReceivedCallback, connection_ctx->id, (jlong) clone);
+    context->vm->DetachCurrentThread();
+    return r;
 }
 
 static int NativeParser_HttpResponseBodyStarted(connection_context *connection_ctx) {
@@ -152,7 +181,13 @@ static int NativeParser_HttpResponseBodyStarted(connection_context *connection_c
         return -1;
     }
 
-    return context->env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseBodyStartedCallback, connection_ctx->id);
+    JNIEnv *env;
+    if (context->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+        throw std::runtime_error("Can't attach to Java VM");
+    }
+    int r = env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseBodyStartedCallback, connection_ctx->id);
+    context->vm->DetachCurrentThread();
+    return r;
 }
 
 static void NativeParser_HttpResponseBodyData(connection_context *connection_ctx, const char *data, size_t length) {
@@ -161,12 +196,17 @@ static void NativeParser_HttpResponseBodyData(connection_context *connection_ctx
         return;
     }
 
-    jbyteArray arr = context->env->NewByteArray((jsize) length);
-    context->env->SetByteArrayRegion(arr, 0, (jsize) length, (jbyte *) data);
-    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyDataCallback, connection_ctx->id, arr);
+    JNIEnv *env;
+    if (context->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+        throw std::runtime_error("Can't attach to Java VM");
+    }
+    jbyteArray arr = env->NewByteArray((jsize) length);
+    env->SetByteArrayRegion(arr, 0, (jsize) length, (jbyte *) data);
+    env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyDataCallback, connection_ctx->id, arr);
 
     // JNI will not auto clean local references since this method wasn't invoked from JVM
-    context->env->DeleteLocalRef(arr);
+    env->DeleteLocalRef(arr);
+    context->vm->DetachCurrentThread();
 }
 
 static void NativeParser_HttpResponseBodyFinished(connection_context *connection_ctx) {
@@ -175,7 +215,12 @@ static void NativeParser_HttpResponseBodyFinished(connection_context *connection
         return;
     }
 
-    context->env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyFinishedCallback, connection_ctx->id);
+    JNIEnv *env;
+    if (context->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+        throw std::runtime_error("Can't attach to Java VM");
+    }
+    env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyFinishedCallback, connection_ctx->id);
+    context->vm->DetachCurrentThread();
 }
 
 Callbacks::Callbacks(JNIEnv *env) {
