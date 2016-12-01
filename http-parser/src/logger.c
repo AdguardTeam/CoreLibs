@@ -23,6 +23,8 @@ static void logger_log_to_file(logger *ctx, logger_log_level_t log_level, const 
 
 logger *logger_open(const char *filename, logger_log_level_t log_level, logger_callback_t callback, void *attachment) {
     logger *ctx = calloc(1, sizeof(logger));
+
+    // If callback is specified, use it, otherwise open log file.
     if (callback) {
         ctx->callback_func = callback;
     } else {
@@ -34,7 +36,7 @@ logger *logger_open(const char *filename, logger_log_level_t log_level, logger_c
         }
         if (ctx->log_file == NULL) {
             fprintf(stderr, "Using stderr for log output.\n");
-            ctx->log_file = stderr;//fdopen(dup(fileno(stderr)), "w+");
+            ctx->log_file = stderr;
         }
         ctx->callback_func = logger_log_to_file;
     }
@@ -62,6 +64,11 @@ static void logger_log_to_file(logger *ctx, logger_log_level_t log_level, const 
     }
 }
 
+/**
+ * Get log level name by level code (internal function)
+ * @param level Level code
+ * @return Level name
+ */
 static const char *log_level_name(int level) {
     switch (level) {
         case LOG_LEVEL_ERROR:
@@ -78,11 +85,6 @@ static const char *log_level_name(int level) {
     }
 }
 
-/**
- * 
- * @param log_level
- * @param message
- */
 void logger_log(logger *ctx, logger_log_level_t log_level, const char *message, ...) {
     va_list args;
     va_start(args, message);

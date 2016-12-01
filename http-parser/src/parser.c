@@ -548,6 +548,8 @@ static int message_inflate(connection_context *context, const char *data, size_t
         memcpy(context->decode_in_buffer, context->zlib_stream.next_in, context->zlib_stream.avail_in);
     }
 
+    goto finish;
+
     error:
     message_inflate_end(context); /* result ignored */
     if (result != Z_STREAM_END) {

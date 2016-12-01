@@ -11,6 +11,9 @@
 extern "C" {
 #endif /* __cplusplus */
 
+/**
+ * Log levels
+ */
 typedef enum {
     LOG_LEVEL_ERROR = 0,
     LOG_LEVEL_WARN = 1,
@@ -50,7 +53,8 @@ extern logger *logger_open(const char *filename, logger_log_level_t log_level, l
  * Log message
  * @param ctx Logger context
  * @param log_level Log level
- * @param fmt Format string
+ * @param fmt Message format string
+ * @param varargs... Message format string arguments
  */
 extern void logger_log(logger *ctx, logger_log_level_t log_level, const char *fmt, ...);
 
