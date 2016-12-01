@@ -14,46 +14,6 @@
 
 #include "../zlib/zlib.h"
 
-/*
- *  Debug helpers:
- */
-#define DEBUG 0
-
-#if !DEBUG
-#   define DBG_PARSER_ERROR
-#   define DBG_HTTP_CALLBACK
-#   define DBG_HTTP_CALLBACK_DATA
-#   define DBG_PARSER_TYPE
-#else
-#   define DBG_PARSER_ERROR                                                 \
-        fprintf (stderr, "DEBUG: Parser error: %s\n",                                \
-                http_errno_name(parser->http_errno));
-
-#   define DBG_HTTP_CALLBACK                                                \
-        fprintf (stderr, "DEBUG: %s\n", __FUNCTION__);
-
-#   define DBG_HTTP_CALLBACK_DATA                                           \
-        fprintf (stderr, "DEBUG: %s: ", __FUNCTION__);                               \
-        char *out = malloc (length + 1);                   \
-        memset (out, 0, length + 1);                                        \
-        memcpy (out, at, length);                                           \
-        printf("%s\n", out);                                                \
-        free(out); 
-
-#   define DBG_PARSER_TYPE                                                  \
-        fprintf (stderr, "DEBUG: Parser type: %d\n", parser->type);
-
-#   define DBG_PARSER_METHOD                                                \
-        fprintf (stderr, "DEBUG: Parser type: %d\n", parser->method);
-#endif
-
-#define DBG_LINE do { fprintf(stderr, __FUNCTION__ ":%d\n", __LINE__); } while(0)
-
-static const char EMPTY_CSTRING[1] = {0};
-
-/*
- * Utility functions
- */
 /**
  * Create HTTP message
  * @param message Pointer to variable where pointer to newly allocated message will be placed
@@ -575,8 +535,8 @@ static int message_inflate_end(connection_context *context) {
 }
 
 int http_parser_on_message_complete(http_parser *parser) {
-    DBG_HTTP_CALLBACK
     connection_context *context = CONTEXT(parser);
+    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_message_complete(parser=%p)", parser);
     http_message *header = context->message;
     if (context->have_body) {
         switch (parser->type) {
@@ -604,17 +564,16 @@ int http_parser_on_message_complete(http_parser *parser) {
     /* Re-init parser before next message. */
     http_parser_init(parser, HTTP_BOTH);
 
+    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_message_complete() returned %d", 0);
     return 0;
 }
 
 int http_parser_on_chunk_header(http_parser *parser) {
-    DBG_HTTP_CALLBACK
     // ignore
     return 0;
 }
 
 int http_parser_on_chunk_complete(http_parser *parser) {
-    DBG_HTTP_CALLBACK
     // ignore
     return 0;
 }
@@ -757,6 +716,10 @@ int parser_connection_close(connection_context *context) {
  *  Utility methods definition:
  */
 
+http_message *http_message_create() {
+    return calloc(1, sizeof(http_message));
+}
+
 http_message *http_message_clone(const http_message *source) {
     http_message *header;
     create_http_message(&header);
@@ -823,10 +786,6 @@ int http_message_set_header_field(http_message *message,
         value == NULL || value_length == 0 ) return 1;
     for (int i = 0; i < message->field_count; i++) {
         if (strncmp(message->fields[i].name, name, name_length) == 0) {
-            if (message->fields[i].value != NULL) {
-                free (message->fields[i].value);
-                message->fields[i].value = NULL;
-            }
             set_chars(&message->fields[i].value, value, value_length);
             return 0;
         }
@@ -836,14 +795,11 @@ int http_message_set_header_field(http_message *message,
 
 const char *http_message_get_header_field(const http_message *message, const char *name,
                                           size_t name_length, size_t *p_value_length) {
-    char *value = NULL;
     if (message == NULL || name == NULL || name_length == 0) return NULL;
     for (int i = 0; i < message->field_count; i++) {
         if (strncmp(message->fields[i].name, name, name_length) == 0) {
-            if (message->fields[i].value) {
-                return message->fields[i].value;
-            }
-            return EMPTY_CSTRING;
+            *p_value_length = strlen(message->fields[i].value);
+            return message->fields[i].value;
         }
     }
     return NULL;
@@ -859,6 +815,7 @@ int http_message_add_header_field(http_message *message,
     add_http_header_param(message);
     append_chars(&message->fields[message->field_count - 1].name,
                  name, length);
+    message->fields[message->field_count - 1].value = calloc(1, 1);
     return 0;
 }
 
@@ -870,14 +827,13 @@ int http_message_del_header_field(http_message *message,
             free (message->fields[i].name);
             free (message->fields[i].value);
             for (int j = i + 1; j < message->field_count; j++) {
-                message->fields[j -1 ].name =
+                message->fields[j - 1].name =
                     message->fields[j].name;
-                message->fields[j -1 ].value =
+                message->fields[j - 1].value =
                     message->fields[j].value;
             }
             message->field_count--;
-            message->fields = realloc(message->fields,
-                                     message->field_count * sizeof(http_header_field));
+            message->fields = realloc(message->fields, message->field_count * sizeof(http_header_field));
             return 0;
         }
     }

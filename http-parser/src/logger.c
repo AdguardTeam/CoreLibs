@@ -44,15 +44,18 @@ logger *logger_open(const char *filename, logger_log_level_t log_level, logger_c
     ctx->attachment = attachment;
 }
 
-void logger_close(logger *ctx) {
+int logger_close(logger *ctx) {
+    int r = 0;
     if (ctx->log_file) {
         fflush(ctx->log_file);
         if (fileno(ctx->log_file) < 3 && fclose(ctx->log_file) != 0) {
-            fprintf(stderr, "Error closing logfile");
+            fprintf(stderr, "Error closing logfile: %s", strerror(errno));
+            r = 1;
         }
         ctx->log_file = NULL;
         ctx->callback_func = NULL;
     }
+    return r;
 }
 
 static void logger_log_to_file(logger *ctx, logger_log_level_t log_level, const char *thread_info, const char *message) {

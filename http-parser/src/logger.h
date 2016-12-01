@@ -75,8 +75,9 @@ extern int logger_is_open(logger *ctx);
 /**
  * Close logger
  * @param ctx Logger context
+ * @return 0 if success
  */
-void logger_close(logger *ctx);
+int logger_close(logger *ctx);
 
 #ifdef __cplusplus
 };
