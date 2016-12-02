@@ -902,3 +902,12 @@ char *http_message_raw(const http_message *message, size_t *p_length) {
     }
     return out_buffer;
 }
+
+connection_id_t connection_get_id(connection_context *context) {
+    return context->id;
+}
+
+const char *connection_get_error_message(connection_context *context) {
+    return context->error_message;
+}
+

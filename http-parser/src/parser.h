@@ -304,6 +304,24 @@ int http_message_del_header_field(http_message *message,
  */
 char *http_message_raw(const http_message *message, size_t *p_length);
 
+/**
+ * Connection context structure access
+ */
+
+/**
+ * Gets connection id
+ * @param context Pointer to connection context
+ * @return Connection id
+ */
+connection_id_t connection_get_id(connection_context *context);
+
+/**
+ * Gets current error message
+ * @param context Pointer to connection context
+ * @return Error string (may be empty)
+ */
+const char *connection_get_error_message(connection_context *context);
+
 #ifdef __cplusplus
 }
 #endif

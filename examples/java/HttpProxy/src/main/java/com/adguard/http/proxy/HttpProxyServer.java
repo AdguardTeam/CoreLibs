@@ -168,8 +168,8 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	private HttpMessage createHttpConnectionEstablishedResponse() {
 		HttpMessage message = HttpMessage.create();
 		message.setStatusCode(200);
-		message.setStatus("NativeConnection established");
-		message.addHeader("NativeConnection", "close");
+		message.setStatus("Connection established");
+		message.addHeader("Connection", "close");
 		return message;
 	}
 
@@ -382,7 +382,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 						sendResponse(anotherEndpoint, response, null);
 					}
 				} else if (context.isHttpConnectMode()) {
-					try (HttpMessage response = createErrorResponse(503, "NativeConnection failed", t)) {
+					try (HttpMessage response = createErrorResponse(503, "Connection failed", t)) {
 						sendResponse(anotherEndpoint, response, null);
 					}
 				}

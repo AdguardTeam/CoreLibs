@@ -7,207 +7,10 @@
 #include "com_adguard_http_parser_HttpMessage.h"
 #include "com_adguard_http_parser_HttpMessage_HttpHeaderField.h"
 #include "../../http-parser/src/parser.h"
-
-typedef struct {
-    JavaVM *vm;
-    jobject callbacks;
-} ParserContext;
-
-struct connection_context {
-    connection_id_t id;
-    char error_message[256];
-    // other fields are internal
-};
-
-/**
- * Callbacks definitions
- */
-
-/**
- * C callbacks
- */
-extern "C" {
-    static int NativeParser_HttpRequestReceived(connection_context *context, void *message);
-    static int NativeParser_HttpRequestBodyStarted(connection_context *context);
-    static void NativeParser_HttpRequestBodyData(connection_context *context, const char *data, size_t length);
-    static void NativeParser_HttpRequestBodyFinished(connection_context *context);
-    static int NativeParser_HttpResponseReceived(connection_context *context, void *message);
-    static int NativeParser_HttpResponseBodyStarted(connection_context *context);
-    static void NativeParser_HttpResponseBodyData(connection_context *context, const char *data, size_t length);
-    static void NativeParser_HttpResponseBodyFinished(connection_context *context);
-};
-
-static parser_callbacks contextCallbacks = {
-        .http_request_received = NativeParser_HttpRequestReceived,
-        .http_request_body_started = NativeParser_HttpRequestBodyStarted,
-        .http_request_body_data = NativeParser_HttpRequestBodyData,
-        .http_request_body_finished = NativeParser_HttpRequestBodyFinished,
-        .http_response_received = NativeParser_HttpResponseReceived,
-        .http_response_body_started = NativeParser_HttpResponseBodyStarted,
-        .http_response_body_data = NativeParser_HttpResponseBodyData,
-        .http_response_body_finished = NativeParser_HttpResponseBodyFinished
-};
-
-/**
- * Java callbacks (calculated once)
- */
-
-class Callbacks {
-
-public:
-    jmethodID HttpRequestReceivedCallback;
-    jmethodID HttpRequestBodyStartedCallback;
-    jmethodID HttpRequestBodyDataCallback;
-    jmethodID HttpRequestBodyFinishedCallback;
-    jmethodID HttpResponseReceivedCallback;
-    jmethodID HttpResponseBodyStartedCallback;
-    jmethodID HttpResponseBodyDataCallback;
-    jmethodID HttpResponseBodyFinishedCallback;
-
-    Callbacks(JNIEnv *env);
-};
-static Callbacks *javaCallbacks = NULL;
+#include "callbacks.h"
 
 static void processError(JNIEnv *env, int returnCode, connection_context *context);
 static void processError(JNIEnv *env, int returnCode, const char *message);
-
-static std::map<connection_context *, ParserContext *> contextMap;
-
-/**
- * Attaches VM to native thread and get JNIEnv
- * @param vm Java virtual machine
- * @return JNIEnv object
- */
-static JNIEnv *getVM(JavaVM *vm) {
-    JNIEnv *env;
-    if (vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
-        throw std::runtime_error("Can't attach to Java VM");
-    }
-    return env;
-}
-
-/*
- * Java callbacks. Attach VM to native thread add call Java method, then detach
- */
-static int NativeParser_HttpRequestReceived(connection_context *connection_ctx, void *message) {
-    ParserContext *context = contextMap[connection_ctx];
-    if (context == NULL) {
-        return -1;
-    }
-
-    http_message *clone = http_message_clone((const http_message *) message);
-    JNIEnv *env = getVM(context->vm);
-    int r = env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestReceivedCallback, connection_ctx->id, (jlong) clone);
-    context->vm->DetachCurrentThread();
-    return r;
-}
-
-static int NativeParser_HttpRequestBodyStarted(connection_context *connection_ctx) {
-    ParserContext *context = contextMap[connection_ctx];
-    if (context == NULL) {
-        return -1;
-    }
-
-    JNIEnv *env = getVM(context->vm);
-    int r = env->CallIntMethod(context->callbacks, javaCallbacks->HttpRequestBodyStartedCallback, connection_ctx->id);
-    context->vm->DetachCurrentThread();
-    return r;
-}
-
-static void NativeParser_HttpRequestBodyData(connection_context *connection_ctx, const char *data, size_t length) {
-    ParserContext *context = contextMap[connection_ctx];
-    if (context == NULL) {
-        return;
-    }
-
-    JNIEnv *env = getVM(context->vm);
-    jbyteArray arr = env->NewByteArray((jsize) length);
-    env->SetByteArrayRegion(arr, 0, (jsize) length, (jbyte *) data);
-    env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyDataCallback, connection_ctx->id, arr);
-
-    // JNI will not auto clean local references since this method wasn't invoked from JVM
-    env->DeleteLocalRef(arr);
-    context->vm->DetachCurrentThread();
-}
-
-static void NativeParser_HttpRequestBodyFinished(connection_context *connection_ctx) {
-    ParserContext *context = contextMap[connection_ctx];
-    if (context == NULL) {
-        return;
-    }
-
-    JNIEnv *env = getVM(context->vm);
-    env->CallVoidMethod(context->callbacks, javaCallbacks->HttpRequestBodyFinishedCallback, connection_ctx->id);
-    context->vm->DetachCurrentThread();
-}
-
-static int NativeParser_HttpResponseReceived(connection_context *connection_ctx, void *message) {
-    ParserContext *context = contextMap[connection_ctx];
-    if (context == NULL) {
-        return -1;
-    }
-
-    http_message *clone = http_message_clone((const http_message *) message);
-
-    JNIEnv *env = getVM(context->vm);
-    int r = env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseReceivedCallback, connection_ctx->id, (jlong) clone);
-    context->vm->DetachCurrentThread();
-    return r;
-}
-
-static int NativeParser_HttpResponseBodyStarted(connection_context *connection_ctx) {
-    ParserContext *context = contextMap[connection_ctx];
-    if (context == NULL) {
-        return -1;
-    }
-
-    JNIEnv *env = getVM(context->vm);
-    int r = env->CallIntMethod(context->callbacks, javaCallbacks->HttpResponseBodyStartedCallback, connection_ctx->id);
-    context->vm->DetachCurrentThread();
-    return r;
-}
-
-static void NativeParser_HttpResponseBodyData(connection_context *connection_ctx, const char *data, size_t length) {
-    ParserContext *context = contextMap[connection_ctx];
-    if (context == NULL) {
-        return;
-    }
-
-    JNIEnv *env = getVM(context->vm);
-    jbyteArray arr = env->NewByteArray((jsize) length);
-    env->SetByteArrayRegion(arr, 0, (jsize) length, (jbyte *) data);
-    env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyDataCallback, connection_ctx->id, arr);
-
-    // JNI will not auto clean local references since this method wasn't invoked from JVM
-    env->DeleteLocalRef(arr);
-    context->vm->DetachCurrentThread();
-}
-
-static void NativeParser_HttpResponseBodyFinished(connection_context *connection_ctx) {
-    ParserContext *context = contextMap[connection_ctx];
-    if (context == NULL) {
-        return;
-    }
-
-    JNIEnv *env = getVM(context->vm);
-    env->CallVoidMethod(context->callbacks, javaCallbacks->HttpResponseBodyFinishedCallback, connection_ctx->id);
-    context->vm->DetachCurrentThread();
-}
-
-Callbacks::Callbacks(JNIEnv *env) {
-    jclass callbacksClass = env->FindClass("Lcom/adguard/http/parser/NativeParser$Callbacks;");
-    if (callbacksClass == NULL) {
-        throw "Can't find class NativeParser$Callbacks";
-    }
-    HttpRequestReceivedCallback = env->GetMethodID(callbacksClass, "onHttpRequestReceived", "(JJ)I");
-    HttpRequestBodyStartedCallback = env->GetMethodID(callbacksClass, "onHttpRequestBodyStarted", "(J)Z");
-    HttpRequestBodyDataCallback = env->GetMethodID(callbacksClass, "onHttpRequestBodyData", "(J[B)V");
-    HttpRequestBodyFinishedCallback = env->GetMethodID(callbacksClass, "onHttpRequestBodyFinished", "(J)V");
-    HttpResponseReceivedCallback = env->GetMethodID(callbacksClass, "onHttpResponseReceived", "(JJ)I");
-    HttpResponseBodyStartedCallback = env->GetMethodID(callbacksClass, "onHttpResponseBodyStarted", "(J)Z");
-    HttpResponseBodyDataCallback = env->GetMethodID(callbacksClass, "onHttpResponseBodyData", "(J[B)V");
-    HttpResponseBodyFinishedCallback = env->GetMethodID(callbacksClass, "onHttpResponseBodyFinished", "(J)V");
-}
 
 /**
  * Invoke parser_connect(), process errors and return the native pointer to connection context
@@ -220,30 +23,20 @@ Callbacks::Callbacks(JNIEnv *env) {
  */
 jlong Java_com_adguard_http_parser_NativeParser_connect(JNIEnv *env, jclass cls, jlong parserNativePtr, jlong id,
                                                         jobject callbacks) {
-    ParserContext *context = new ParserContext;
-
-    env->GetJavaVM(&context->vm);
-    context->callbacks = env->NewGlobalRef(callbacks);
-
     connection_info *info = new connection_info;
     snprintf(info->endpoint_1, ENDPOINT_MAXLEN, "%s", "something1");
     snprintf(info->endpoint_2, ENDPOINT_MAXLEN, "%s", "something2");
 
-    if (javaCallbacks == NULL) {
-        javaCallbacks = new Callbacks(env);
-    }
-
     connection_context *connection_ctx;
     parser_context *parser_ctx = (parser_context *) parserNativePtr;
-    int r = parser_connect(parser_ctx, id, &contextCallbacks, &connection_ctx);
+    int r = parser_connect(parser_ctx, id, &parserCallbacks, &connection_ctx);
     if (r != 0) {
         char message[256];
         snprintf(message, 256, "parser_connect() returned %d", r);
         processError(env, r, message);
     } else {
-        contextMap[connection_ctx] = context;
+        new Callbacks(env, callbacks, connection_ctx);
     }
-
 
     return (jlong) connection_ctx;
 }
@@ -273,17 +66,14 @@ void Java_com_adguard_http_parser_NativeParser_closeConnection(JNIEnv *env, jcla
     int r = parser_connection_close(context);
     // `context' memory is freed at this point
     processError(env, r, "");
-    auto it = contextMap.find(context);
-    if (it != contextMap.end()) {
-        ParserContext *parserContext = it->second;
-        delete parserContext;
-        contextMap.erase(context);
-    }
+
+    // Delete callbacks
+    delete Callbacks::get(context);
 }
 
 jlong Java_com_adguard_http_parser_NativeParser_getConnectionId(JNIEnv *env, jclass cls, jlong connectionPtr) {
     connection_context *context = (connection_context *) connectionPtr;
-    return (jlong) context->id;
+    return (jlong) connection_get_id(context);
 }
 
 void Java_com_adguard_http_parser_NativeParser_init(JNIEnv *env, jclass cls, jobject parser, jlong loggerPtr) {
@@ -455,8 +245,7 @@ jstring Java_com_adguard_http_parser_HttpMessage_00024HttpHeaderField_getValue(J
 
 
 static void processError(JNIEnv *env, int returnCode, connection_context *context) {
-    processError(env, returnCode, context->error_message);
-    context->error_message[0] = 0;
+    processError(env, returnCode, connection_get_error_message(context));
 }
 /**
  * Throws exception corresponding to error code
