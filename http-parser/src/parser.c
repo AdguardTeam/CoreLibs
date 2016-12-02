@@ -394,7 +394,7 @@ int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
     }
 
     out:
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_body() returned %d", -1);
+    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_body() returned %d", r);
     return r;
 }
 
@@ -465,9 +465,12 @@ static content_encoding_t get_content_encoding(connection_context *context) {
 static int message_inflate(connection_context *context, const char *data, size_t length, body_data_callback body_data) {
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "message_inflate(data=%p, length=%d)", data, (int) length);
     int result;
+    int r = 0;
 
     if (context->decode_out_buffer == NULL) {
-        return 1;
+        r = 1;
+        // Compression stream was not initialized
+        goto finish;
     }
 
     // If we have a data in input buffer, append new data to it, otherwise process `data' as input buffer
@@ -499,7 +502,6 @@ static int message_inflate(connection_context *context, const char *data, size_t
         }
         if (result != Z_OK) {
             goto error;
-
         }
     } while (context->zlib_stream.avail_in > 0 && old_avail_in != context->zlib_stream.avail_in);
 
@@ -514,11 +516,12 @@ static int message_inflate(connection_context *context, const char *data, size_t
     message_inflate_end(context); /* result ignored */
     if (result != Z_STREAM_END) {
         fprintf(stderr, "Decompression error: %d\n", result);
-        return -1;
+        r = 1;
     }
 
 finish:
-    return 0;
+    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "message_inflate() returned %d", r);
+    return r;
 }
 
 /**
