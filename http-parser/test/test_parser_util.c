@@ -104,36 +104,5 @@ int main() {
     assert(output != NULL);
     assert (!strcmp(output, correct_output_response));
     free(output);
-
-/*
-    http_message *http_message_create();
-    http_message *http_message_clone(const http_message *source);
-    void http_message_free(http_message *message);
-
-    int http_message_set_method(http_message *message,
-                                const char *method, size_t length);
-
-    int http_message_set_url(http_message *message,
-                             const char *url, size_t length);
-
-    int http_message_set_status(http_message *message,
-                                const char *status, size_t length);
-
-    int http_message_set_status_code(http_message *message, int status_code);
-
-    int http_message_set_header_field(http_message *message,
-                                      const char *name, size_t name_length,
-                                      const char *value, size_t value_length);
-
-    const char *http_message_get_header_field(const http_message *message, const char *name,
-                                              size_t name_length, size_t *p_value_length);
-
-    int http_message_add_header_field(http_message *message,
-                                      const char *name, size_t length);
-
-    int http_message_del_header_field(http_message *message,
-                                      const char *name, size_t length);
-
-    char *http_message_raw(const http_message *message, size_t *p_length); */
 }
 
