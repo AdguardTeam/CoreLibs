@@ -130,6 +130,10 @@ typedef struct parser_context parser_context;
 struct connection_context { /* structure has name for queue.h macros */
     // Connection id
     connection_id_t         id;
+    // Current error message
+    char                    error_message[256];
+    // Body callback error
+    error_type_t            body_callback_error;
     // Connection info (endpoint names), not used by any current language bindings
     connection_info         *info;
     // Parser callbacks
@@ -164,10 +168,6 @@ struct connection_context { /* structure has name for queue.h macros */
     char                    *decode_out_buffer;
     // Zlib stream
     z_stream                zlib_stream;
-    // Current error message
-    char                    error_message[256];
-    // Current error code
-    error_type_t            error_type;
 
     // Content-by-id hashmap entry (queue.h based)
     // TODO: may be it is better to use klib/khash instead
@@ -203,10 +203,9 @@ static int message_inflate_end(connection_context *context);
  * Throw an error for current connection context. It calls parse_error callback with given error type and message
  * @param context Connection context
  * @param direction Transfer direction
- * @param type Error type: HTTP or DECODE (zlib error).
  * @param msg Error message (may be null or empty)
  */
-static void set_error(connection_context *context, error_type_t type, const char *msg);
+static void set_error(connection_context *context, const char *msg);
 
 /*
  *  Node.js http_parser's callbacks (parser->settings):
@@ -377,7 +376,7 @@ int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
         context->need_decode = body_started(context);
         if (context->need_decode) {
             if (message_inflate_init(context) != 0) {
-                set_error(context, PARSER_ZLIB_ERROR, context->zlib_stream.msg);
+                set_error(context, context->zlib_stream.msg);
                 r = PARSER_ZLIB_ERROR;
                 goto out;
             }
@@ -388,19 +387,19 @@ int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
         body_data(context, at, length);
     } else {
         if (message_inflate(context, at, length, body_data) != 0) {
-            set_error(context, PARSER_ZLIB_ERROR, context->zlib_stream.msg);
+            set_error(context, context->zlib_stream.msg);
             return PARSER_ZLIB_ERROR;
         }
     }
 
     out:
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_body() returned %d", r);
+    context->body_callback_error = r;
     return r;
 }
 
-static void set_error(connection_context *context, error_type_t type, const char *msg) {
-    context->error_type = type;
-    snprintf(context->error_message, 256, "%s", msg);
+static void set_error(connection_context *context, const char *msg) {
+    snprintf(context->error_message, 256, "%s", msg ? msg : "");
 }
 
 /**
@@ -628,13 +627,14 @@ int parser_destroy(parser_context *parser_ctx) {
 int parser_connect(parser_context *parser_ctx, connection_id_t id, parser_callbacks *callbacks, connection_context **p_context) {
     logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "parser_connect(id=%d, callbacks=%p, p_context=%p)", (int)id, callbacks, p_context);
     connection_context *context = context_by_id_get(parser_ctx, id);
+    int r = PARSER_OK;
+
     if (context != NULL) {
         // Already connected
-        // TODO: report error?
-        set_error(context, PARSER_ALREADY_CONNECTED_ERROR, "Already connected");
         logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "error: already connected!");
-        logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "parser_connect() returned %d", context->error_type);
-        return context->error_type;
+        set_error(context, "Already connected");
+        r = PARSER_ALREADY_CONNECTED_ERROR;
+        goto finish;
     }
     
     context = malloc(sizeof(connection_context));
@@ -655,12 +655,13 @@ int parser_connect(parser_context *parser_ctx, connection_id_t id, parser_callba
         logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "setting *p_context to %p", context);
         *p_context = context;
     } else {
-        set_error(context, PARSER_NULL_POINTER_ERROR, "p_context");
-        return context->error_type;
+        r = PARSER_NULL_POINTER_ERROR;
+        set_error(context, "p_context is NULL");
     }
 
-    logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "parser_connect() returned %d", 0);
-    return 0;
+    finish:
+    logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "parser_connect() returned %d", r);
+    return r;
 }
 
 int parser_disconnect(connection_context *context, transfer_direction_t direction) {
@@ -693,19 +694,21 @@ int parser_input(connection_context *context, transfer_direction_t direction, co
             enum http_errno http_parser_errno = HTTP_PARSER_ERRNO(context->parser);
             if (http_parser_errno != HPE_CB_body) {
                 // If body data callback fails, then get saved error from structure, don't overwrite
-                set_error(context, PARSER_HTTP_PARSE_ERROR, http_errno_name(http_parser_errno));
+                set_error(context, http_errno_name(http_parser_errno));
                 r = PARSER_HTTP_PARSE_ERROR;
             } else {
-                r = context->error_type;
+                r = context->body_callback_error;
             }
 
-            http_parser_init(context->parser, direction == DIRECTION_OUT ? HTTP_REQUEST : HTTP_RESPONSE);
+            // http_parser_init(context->parser, direction == DIRECTION_OUT ? HTTP_REQUEST : HTTP_RESPONSE);
+            goto finish;
         }
         http_parser_execute(context->parser, context->settings,
                              data + context->done, INPUT_LENGTH_AT_ERROR);
         context->done+=INPUT_LENGTH_AT_ERROR;
     }
 
+    finish:
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "parser_input() returned %d", r);
     return r;
 }
