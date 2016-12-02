@@ -214,6 +214,8 @@ static void set_error(connection_context *context, const char *msg);
 
 static content_encoding_t get_content_encoding(connection_context *context);
 
+void parser_reset(connection_context *context);
+
 #define CONTEXT(parser)         ((connection_context*)parser->data)
 
 /**
@@ -278,9 +280,9 @@ int http_parser_on_message_begin(http_parser *parser) {
 int http_parser_on_url(http_parser *parser, const char *at, size_t length) {
     connection_context *context = CONTEXT(parser);
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_url(parser=%p, at=%.*s)", parser, (int) length, at);
-    http_message *header = context->message;
+    http_message *message = context->message;
     if (at != NULL && length > 0) {
-        append_chars(&header->url, at, length);
+        append_chars(&message->url, at, length);
     }
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_url() returned %d", 0);
     return 0;
@@ -289,10 +291,10 @@ int http_parser_on_url(http_parser *parser, const char *at, size_t length) {
 int http_parser_on_status(http_parser *parser, const char *at, size_t length) {
     connection_context *context = CONTEXT(parser);
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_status(parser=%p, at=%.*s)", parser, (int) length, at);
-    http_message *header = context->message;
+    http_message *message = context->message;
     if (at != NULL && length > 0) {
-        append_chars(&header->status, at, length);
-        header->status_code = parser->status_code;
+        append_chars(&message->status, at, length);
+        message->status_code = parser->status_code;
     }
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_status() returned %d", 0);
     return 0;
@@ -301,13 +303,13 @@ int http_parser_on_status(http_parser *parser, const char *at, size_t length) {
 int http_parser_on_header_field(http_parser *parser, const char *at, size_t length) {
     connection_context *context = CONTEXT(parser);
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_header_field(parser=%p, at=%.*s)", parser, (int) length, at);
-    http_message *header = context->message;
+    http_message *message = context->message;
     if (at != NULL && length > 0) {
         if (!context->in_field) {
             context->in_field = 1;
-            add_http_header_param(header);
+            add_http_header_param(message);
         }
-        append_chars(&header->fields[header->field_count - 1].name, at, length);
+        append_chars(&message->fields[message->field_count - 1].name, at, length);
     }
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_header_field() returned %d", 0);
     return 0;
@@ -316,12 +318,12 @@ int http_parser_on_header_field(http_parser *parser, const char *at, size_t leng
 int http_parser_on_header_value(http_parser *parser, const char *at, size_t length) {
     connection_context *context = CONTEXT(parser);
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_header_value(parser=%p, at=%.*s)", parser, (int) length, at);
-    http_message *header = context->message;
+    http_message *message = context->message;
     context->in_field = 0;
     if (at != NULL && length > 0) {
-        append_chars(&header->fields[header->field_count - 1].value, at, length);
+        append_chars(&message->fields[message->field_count - 1].value, at, length);
     } else {
-        header->fields[header->field_count - 1].value = calloc(1, 1);
+        message->fields[message->field_count - 1].value = calloc(1, 1);
     }
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_header_value() returned %d", 0);
     return 0;
@@ -539,7 +541,7 @@ static int message_inflate_end(connection_context *context) {
 int http_parser_on_message_complete(http_parser *parser) {
     connection_context *context = CONTEXT(parser);
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_message_complete(parser=%p)", parser);
-    http_message *header = context->message;
+    http_message *message = context->message;
     if (context->have_body) {
         switch (parser->type) {
             case HTTP_REQUEST:
@@ -553,18 +555,7 @@ int http_parser_on_message_complete(http_parser *parser) {
         }
     }
 
-    if (context->decode_out_buffer != NULL) {
-        message_inflate_end(context);
-    }
-
-    destroy_http_message(header);
-    context->message = 0;
-    context->have_body = 0;
-    context->body_started = 0;
-    context->content_encoding = CONTENT_ENCODING_IDENTITY;
-
-    /* Re-init parser before next message. */
-    http_parser_init(parser, HTTP_BOTH);
+    parser_reset(context);
 
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_message_complete() returned %d", 0);
     return 0;
@@ -649,7 +640,7 @@ int parser_connect(parser_context *parser_ctx, connection_id_t id, parser_callba
     context->parser->data = context;
     
     context_by_id_add(parser_ctx, context);
-    http_parser_init(context->parser, HTTP_BOTH);
+    parser_reset(context);
 
     if (p_context != NULL) {
         logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "setting *p_context to %p", context);
@@ -664,10 +655,31 @@ int parser_connect(parser_context *parser_ctx, connection_id_t id, parser_callba
     return r;
 }
 
+void parser_reset(connection_context *context) {
+    if (context->decode_out_buffer != NULL) {
+        message_inflate_end(context);
+    }
+
+    if (context->message != NULL) {
+        destroy_http_message(context->message);
+    }
+    context->message = 0;
+    context->have_body = 0;
+    context->body_started = 0;
+    context->content_encoding = CONTENT_ENCODING_IDENTITY;
+
+    /* Re-init parser before next message. */
+    http_parser_init(context->parser, HTTP_BOTH);
+}
+
 int parser_disconnect(connection_context *context, transfer_direction_t direction) {
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "parser_disconnect(context=%p, direction=%d)", context, (int) direction);
-    // connection_context *context = context_by_id_remove(id);
-    // TODO: free context structures
+    if (direction == DIRECTION_OUT) {
+        if (context->parser->type == HTTP_RESPONSE) {
+            message_inflate_end(context);
+            http_parser_init(context->parser, HTTP_REQUEST);
+        }
+    }
     logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "parser_disconnect() returned %d", 0);
     return 0;
 }
@@ -680,7 +692,7 @@ int parser_input(connection_context *context, transfer_direction_t direction, co
     // TODO: this is wrong, null bytes are allowed in content
     context->done = 0;
 
-    if (HTTP_PARSER_ERRNO(context->parser) != HPE_OK) {
+    if (HTTP_PARSER_ERRNO(context->parser) != HPE_OK || context->parser->type == HTTP_BOTH) {
         http_parser_init(context->parser, direction == DIRECTION_OUT ? HTTP_REQUEST : HTTP_RESPONSE);
     }
 
@@ -703,6 +715,8 @@ int parser_input(connection_context *context, transfer_direction_t direction, co
             // http_parser_init(context->parser, direction == DIRECTION_OUT ? HTTP_REQUEST : HTTP_RESPONSE);
             goto finish;
         }
+
+        // Input was not fully processed, turn on slow mode
         http_parser_execute(context->parser, context->settings,
                              data + context->done, INPUT_LENGTH_AT_ERROR);
         context->done+=INPUT_LENGTH_AT_ERROR;
@@ -715,6 +729,7 @@ int parser_input(connection_context *context, transfer_direction_t direction, co
 
 int parser_connection_close(connection_context *context) {
     context_by_id_remove(context->parser_ctx, context->id);
+    free(context);
     return 0;
 }
 
@@ -727,23 +742,23 @@ http_message *http_message_create() {
 }
 
 http_message *http_message_clone(const http_message *source) {
-    http_message *header;
-    create_http_message(&header);
+    http_message *message;
+    create_http_message(&message);
     if (source->url != NULL)
-        set_chars(&header->url, source->url, strlen(source->url));
+        set_chars(&message->url, source->url, strlen(source->url));
     if (source->status != NULL)
-        set_chars(&header->status, source->status, strlen(source->status));
+        set_chars(&message->status, source->status, strlen(source->status));
     if (source->method != NULL)
-        set_chars(&header->method, source->method, strlen(source->method));
-    header->status_code = source->status_code;
+        set_chars(&message->method, source->method, strlen(source->method));
+    message->status_code = source->status_code;
     for (int i = 0; i < source->field_count; i++) {
-        add_http_header_param(header);
-        set_chars(&header->fields[i].name, source->fields[i].name,
+        add_http_header_param(message);
+        set_chars(&message->fields[i].name, source->fields[i].name,
                        strlen(source->fields[i].name));
-        set_chars(&header->fields[i].value, source->fields[i].value,
+        set_chars(&message->fields[i].value, source->fields[i].value,
                        strlen(source->fields[i].value));
     }
-    return header;
+    return message;
 }
 
 int http_message_set_method(http_message *message,

@@ -14,19 +14,9 @@
 #include <fcntl.h>
 #include "parser.h"
 
-sigjmp_buf buf;
-
-#define RECOVERED 1
-
 #define NONEMPTY_FIELD_NAME "Non-Empty-Field"
 #define NONEXISTING_FIELD_NAME "Non-Existing-Field"
 #define EMPTY_FIELD_NAME  "Empty-Field"
-
-void return_from_crash(int sig) {
-    siglongjmp(buf, RECOVERED);
-    fprintf(stderr, "recover from double-free failed\n");
-    exit(2);
-}
 
 static const char correct_output[] = "GET / HTTP/1.1\r\n"
         "Non-Empty-Field: 1\r\n"
@@ -48,18 +38,6 @@ int main() {
     http_message *clone = http_message_clone(message);
     assert (clone != NULL);
     http_message_free(clone);
-    int fd = open("/dev/null", O_RDWR);
-    if (sigsetjmp(buf, 1) != RECOVERED) {
-        signal(SIGABRT, return_from_crash);
-        signal(SIGSEGV, return_from_crash);
-        dup2(fd, 2);
-        http_message_free(clone);
-        return 1;
-    }
-    signal(SIGABRT, SIG_DFL);
-    signal(SIGSEGV, SIG_DFL);
-    dup2(1, 2);
-    // Recovered from crash, continuing.
 
     http_message_set_method(message, "GET", strlen("GET"));
     http_message_set_url(message, "/", 1);
@@ -97,11 +75,13 @@ int main() {
     assert (!strcmp(output, correct_output));
     free(output);
 
-    http_message_set_status_code(message, 200);
-    http_message_set_status(message, HTTP_STATUS_OK, strlen(HTTP_STATUS_OK));
+    clone = http_message_clone(message);
 
-    output = http_message_raw(message, &output_len);
-    assert(output != NULL);
+    http_message_set_status_code(clone, 200);
+    http_message_set_status(clone, HTTP_STATUS_OK, strlen(HTTP_STATUS_OK));
+
+    output = http_message_raw(clone, &output_len);
+    assert (output != NULL);
     assert (!strcmp(output, correct_output_response));
     free(output);
 }
