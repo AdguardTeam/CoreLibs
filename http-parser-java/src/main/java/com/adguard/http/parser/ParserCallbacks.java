@@ -5,21 +5,19 @@ package com.adguard.http.parser;
  */
 public interface ParserCallbacks {
 
-	void onHttpRequestReceived(long id, HttpMessage header);
+	void onHttpRequestReceived(long id, HttpMessage message);
 
-	ContentEncoding onHttpRequestBodyStarted(long id);
+	boolean onHttpRequestBodyStarted(long id);
 
 	void onHttpRequestBodyData(long id, byte[] data);
 
 	void onHttpRequestBodyFinished(long id);
 
-	void onHttpResponseReceived(long id, HttpMessage header);
+	void onHttpResponseReceived(long id, HttpMessage message);
 
-	ContentEncoding onHttpResponseBodyStarted(long id);
+	boolean onHttpResponseBodyStarted(long id);
 
 	void onHttpResponseBodyData(long id, byte[] data);
 
 	void onHttpResponseBodyFinished(long id);
-
-	void onParseError(long id, Direction direction, int errorType, String message);
 }

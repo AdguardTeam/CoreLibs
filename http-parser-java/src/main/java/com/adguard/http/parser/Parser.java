@@ -1,6 +1,7 @@
 package com.adguard.http.parser;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
 /**
@@ -8,14 +9,13 @@ import java.nio.ByteBuffer;
  */
 public interface Parser extends Closeable {
 
-	// TODO: don't return int, throw an Exception
-	Connection connect(long id, ParserCallbacks callbacks);
+	Connection connect(long id, ParserCallbacks callbacks) throws IOException;
 
-	int disconnect(Connection connection, Direction direction);
+	void disconnect(Connection connection, Direction direction) throws IOException;
 
-	int input(Connection connection, Direction direction, byte[] data);
+	void input(Connection connection, Direction direction, byte[] data) throws IOException;
 
-	int close(Connection connection);
+	void close(Connection connection) throws IOException;
 
 	interface Connection {
 		long getId();

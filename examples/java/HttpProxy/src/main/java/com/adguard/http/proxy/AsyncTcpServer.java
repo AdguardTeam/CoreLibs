@@ -106,7 +106,12 @@ public abstract class AsyncTcpServer implements AsyncTcpConnectionEndpoint.Endpo
 						timeout = time;
 					}
 				} else {
-					((AsyncTcpConnectionEndpoint) key.attachment()).doTimeout();
+					try {
+						((AsyncTcpConnectionEndpoint) key.attachment()).doTimeout();
+					} catch (Exception e) {
+						log.error("Error timing out endpoint {}", key.attachment());
+						IOUtils.closeQuietly((AsyncTcpConnectionEndpoint) key.attachment());
+					}
 				}
 			}
 		}

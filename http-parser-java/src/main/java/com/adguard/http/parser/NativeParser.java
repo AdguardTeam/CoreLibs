@@ -26,30 +26,30 @@ public class NativeParser implements Parser {
 		return new NativeConnection(connect(parserCtxPtr, id, new Callbacks(callbacks)));
 	}
 
-	public native static synchronized int disconnect0(long connectionNativePtr, int direction);
+	public native static synchronized void disconnect0(long connectionNativePtr, int direction) throws IOException;
 
 	@Override
-	public int disconnect(Connection connection, Direction direction) {
-		return disconnect0(((NativeConnection) connection).nativePtr, direction.getCode());
+	public void disconnect(Connection connection, Direction direction) throws IOException {
+		disconnect0(((NativeConnection) connection).nativePtr, direction.getCode());
 	}
 
-	public static native int input0(long connectionNativePtr, int direction, byte[] data);
+	public static native void input0(long connectionNativePtr, int direction, byte[] data) throws IOException;
 
 	@Override
-	public int input(Connection connection, Direction direction, byte[] data) {
-		return input0(((NativeConnection) connection).nativePtr, direction.getCode(), data);
+	public void input(Connection connection, Direction direction, byte[] data) throws IOException {
+		input0(((NativeConnection) connection).nativePtr, direction.getCode(), data);
 	}
 
-	public static native int closeConnection(long connectionNativePtr);
+	public static native void closeConnection(long connectionNativePtr) throws IOException;
 
 	@Override
-	public int close(Connection connection) {
-		return closeConnection(((NativeConnection) connection).nativePtr);
+	public void close(Connection connection) throws IOException {
+		closeConnection(((NativeConnection) connection).nativePtr);
 	}
 
 	public static native long getConnectionId(long nativePtr);
 
-	public static native void closeParser(long parserNativePtr);
+	public static native void closeParser(long parserNativePtr) throws IOException;
 
 	@Override
 	public void close() throws IOException {
@@ -68,8 +68,8 @@ public class NativeParser implements Parser {
 			return 0;
 		}
 
-		int onHttpRequestBodyStarted(long id) {
-			return callbacks.onHttpRequestBodyStarted(id).getCode();
+		boolean onHttpRequestBodyStarted(long id) {
+			return callbacks.onHttpRequestBodyStarted(id);
 		}
 
 		// TODO: pass pointer to be able to provide byte array from the byte array pool
@@ -86,8 +86,8 @@ public class NativeParser implements Parser {
 			return 0;
 		}
 
-		int onHttpResponseBodyStarted(long id) {
-			return callbacks.onHttpResponseBodyStarted(id).getCode();
+		boolean onHttpResponseBodyStarted(long id) {
+			return callbacks.onHttpResponseBodyStarted(id);
 		}
 
 		// TODO: pass pointer to be able to provide byte array from the byte array pool
@@ -97,10 +97,6 @@ public class NativeParser implements Parser {
 
 		void onHttpResponseBodyFinished(long id) {
 			callbacks.onHttpResponseBodyFinished(id);
-		}
-
-		void onParseError(long id, int direction, int errorType, String message) {
-			callbacks.onParseError(id, Direction.getByCode(direction), errorType, message);
 		}
 	}
 

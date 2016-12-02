@@ -26,25 +26,25 @@ JNIEXPORT jlong JNICALL Java_com_adguard_http_parser_NativeParser_connect
 /*
  * Class:     com_adguard_http_parser_NativeParser
  * Method:    disconnect0
- * Signature: (JI)I
+ * Signature: (JI)V
  */
-JNIEXPORT jint JNICALL Java_com_adguard_http_parser_NativeParser_disconnect0
+JNIEXPORT void JNICALL Java_com_adguard_http_parser_NativeParser_disconnect0
   (JNIEnv *, jclass, jlong, jint);
 
 /*
  * Class:     com_adguard_http_parser_NativeParser
  * Method:    input0
- * Signature: (JI[B)I
+ * Signature: (JI[B)V
  */
-JNIEXPORT jint JNICALL Java_com_adguard_http_parser_NativeParser_input0
+JNIEXPORT void JNICALL Java_com_adguard_http_parser_NativeParser_input0
   (JNIEnv *, jclass, jlong, jint, jbyteArray);
 
 /*
  * Class:     com_adguard_http_parser_NativeParser
  * Method:    closeConnection
- * Signature: (J)I
+ * Signature: (J)V
  */
-JNIEXPORT jint JNICALL Java_com_adguard_http_parser_NativeParser_closeConnection
+JNIEXPORT void JNICALL Java_com_adguard_http_parser_NativeParser_closeConnection
   (JNIEnv *, jclass, jlong);
 
 /*

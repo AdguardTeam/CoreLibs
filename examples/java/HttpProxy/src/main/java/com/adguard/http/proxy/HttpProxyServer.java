@@ -1,6 +1,7 @@
 package com.adguard.http.proxy;
 
 import com.adguard.http.parser.*;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,7 +44,12 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	public void onInput(AsyncTcpConnectionEndpoint endpoint, byte[] bytes) {
 		HttpProxyContext context = getContext(endpoint);
 		if (!context.isHttpConnectMode()) {
-			parser.input(context.getConnection(), context.getDirection(endpoint), bytes);
+			try {
+				parser.input(context.getConnection(), context.getDirection(endpoint), bytes);
+			} catch (Exception e) {
+				onError(endpoint, e);
+				processError(context, context.getDirection(endpoint), e.getMessage());
+			}
 		} else {
 			AsyncTcpConnectionEndpoint anotherEndpoint = context.getOpposingEndpoint(endpoint);
 			anotherEndpoint.write(bytes);
@@ -56,23 +62,30 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		synchronized (nextConnectionIdSync) {
 			connectionId = nextConnectionId++;
 		}
-		Parser.Connection connection = parser.connect(connectionId, this);
+
+		Parser.Connection connection = null;
+		try {
+			connection = parser.connect(connectionId, this);
+		} catch (IOException e) {
+			endpoint.close();
+			return;
+		}
 
 		HttpProxyContext context = new HttpProxyContext(connection, selector, endpoint);
 		contexts.put(connectionId, context);
 	}
 
 	@Override
-	public void onHttpRequestReceived(long id, HttpMessage header) {
-		if (header.getMethod().equals(HTTP_METHOD_CONNECT)) {
-			onHttpConnectReceived(id, header);
+	public void onHttpRequestReceived(long id, HttpMessage message) {
+		if (message.getMethod().equals(HTTP_METHOD_CONNECT)) {
+			onHttpConnectReceived(id, message);
 			return;
 		}
 
 		// Start remote connection
-		String host = stripHostFromRequestUrl(header);
+		String host = stripHostFromRequestUrl(message);
 		if (host == null) {
-			host = header.getHeader("Host");
+			host = message.getHeader("Host");
 		}
 
 		HttpProxyContext context = contexts.get(id);
@@ -81,13 +94,13 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 			return;
 		}
 
-		context.setRequest(header);
-		String transferEncoding = header.getHeader("Transfer-Encoding");
+		context.setRequest(message);
+		String transferEncoding = message.getHeader("Transfer-Encoding");
 		context.setChunked(Objects.equals(transferEncoding, "chunked"));
-		removeUnsupportedFeatures(header);
+		removeUnsupportedFeatures(message);
 
 		AsyncTcpConnectionEndpoint remoteEndpoint = setRemoteEndpoint(id, host);
-		sendRequest(remoteEndpoint, header);
+		sendRequest(remoteEndpoint, message);
 		if (!context.isChunked()) {
 			context.setCurrentDirection(Direction.IN);
 		}
@@ -138,7 +151,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	}
 
 	private HttpMessage createErrorResponse(int statusCode, String status, Throwable t) {
-		HttpMessage message = new HttpMessage();
+		HttpMessage message = HttpMessage.create();
 		String content = "Error occurred while connecting to the remote host" + (t == null ? "\n" : ": " + t.getMessage() + "\n");
 		byte[] contentBytes = content.getBytes();
 		message.setStatusCode(statusCode);
@@ -153,7 +166,7 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	 * Response to HTTP CONNECT request
 	 */
 	private HttpMessage createHttpConnectionEstablishedResponse() {
-		HttpMessage message = new HttpMessage();
+		HttpMessage message = HttpMessage.create();
 		message.setStatusCode(200);
 		message.setStatus("NativeConnection established");
 		message.addHeader("NativeConnection", "close");
@@ -177,23 +190,20 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	 * @param endpoint Client endpoint
 	 */
 	private void sendBadRequestResponseAndClose(AsyncTcpConnectionEndpoint endpoint) {
-		HttpMessage response = new HttpMessage();
-		try {
+		try (HttpMessage response = HttpMessage.create()) {
 			response.setStatusCode(400);
 			response.setStatus("Bad request");
 			response.addHeader("Content-Length", "0");
-			response.addHeader("NativeConnection", "close");
+			response.addHeader("Connection", "close");
 			endpoint.write(response.getBytes());
-			endpoint.close();
 		} finally {
-			response.free();
+			endpoint.close();
 		}
-
 	}
 
 	@Override
-	public ContentEncoding onHttpRequestBodyStarted(long id) {
-		return ContentEncoding.IDENTITY;
+	public boolean onHttpRequestBodyStarted(long id) {
+		return false;
 	}
 
 	@Override
@@ -210,19 +220,19 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	}
 
 	@Override
-	public void onHttpResponseReceived(long id, HttpMessage header) {
-		log.trace(">>> {}", header);
+	public void onHttpResponseReceived(long id, HttpMessage message) {
+		log.trace(">>> {}", message);
 		HttpProxyContext context = contexts.get(id);
-		String transferEncoding = header.getHeader("Transfer-Encoding");
+		String transferEncoding = message.getHeader("Transfer-Encoding");
 		context.setChunked(Objects.equals(transferEncoding, "chunked"));
-		String contentEncodingName = header.getHeader("Content-Encoding");
+		String contentEncodingName = message.getHeader("Content-Encoding");
 		if (contentEncodingName != null) {
 			context.setContentEncoding(ContentEncoding.getByName(contentEncodingName));
 		} else {
 			context.setContentEncoding(ContentEncoding.IDENTITY);
 		}
 
-		HttpMessage responseHeader = header.cloneHeader();
+		HttpMessage responseHeader = message.clone();
 		responseHeader.removeHeader("Content-Encoding");
 		if (contentEncodingName != null) {
 			responseHeader.addHeader("Orig-Content-Encoding", contentEncodingName);
@@ -237,9 +247,9 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	}
 
 	@Override
-	public ContentEncoding onHttpResponseBodyStarted(long id) {
+	public boolean onHttpResponseBodyStarted(long id) {
 		HttpProxyContext context = contexts.get(id);
-		return context.getContentEncoding();
+		return context.getContentEncoding() != ContentEncoding.IDENTITY;
 	}
 
 	@Override
@@ -254,16 +264,14 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		writeLastChunk(context, context.getLocalEndpoint());
 	}
 
-	@Override
-	public void onParseError(long id, Direction direction, int type, String message) {
-		log.warn("Parse error {} {}", type, message);
-		HttpProxyContext context = contexts.get(id);
+	private void processError(HttpProxyContext context, Direction direction, String message) {
 		if (direction == Direction.OUT) {
 			sendBadRequestResponseAndClose(context.getLocalEndpoint());
 		} else {
 			context.getCurrentRemoteEndpoint().close();
-			HttpMessage response = createRemoteHostInvalidResponseResponse(context.getLocalEndpoint());
-			sendResponse(context.getLocalEndpoint(), response, null);
+			try (HttpMessage response = createRemoteHostInvalidResponseResponse(context.getLocalEndpoint())) {
+				sendResponse(context.getLocalEndpoint(), response, null);
+			}
 		}
 	}
 
@@ -324,8 +332,9 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 	public void onConnect(AsyncTcpConnectionEndpoint endpoint) {
 		if (getContext(endpoint).isHttpConnectMode()) {
 			endpoint.setReadTimeout(Constants.TUNNEL_READ_TIMEOUT_SECONDS);
-			HttpMessage message = createHttpConnectionEstablishedResponse();
-			sendResponse(getContext(endpoint).getOpposingEndpoint(endpoint), message, null);
+			try (HttpMessage message = createHttpConnectionEstablishedResponse()) {
+				sendResponse(getContext(endpoint).getOpposingEndpoint(endpoint), message, null);
+			}
 		}
 	}
 
@@ -335,7 +344,11 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 		HttpProxyContext context = getContext(endpoint);
 		if (!context.isClosed()) {
 			Direction direction = context.getDirection(endpoint);
-			parser.disconnect(context.getConnection(), direction);
+			try {
+				parser.disconnect(context.getConnection(), direction);
+			} catch (IOException e) {
+				log.warn("Error disconnecting connection {} in HTTP parser");
+			}
 
 			if (direction == Direction.OUT || context.isHttpConnectMode()) {
 				getContext(endpoint).close();
@@ -343,7 +356,11 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 				getContext(endpoint).removeRemoteEndpoint(endpoint);
 			}
 		} else {
-			parser.close(context.getConnection());
+			try {
+				parser.close(context.getConnection());
+			} catch (IOException e) {
+				log.warn("Error closing connection {} in HTTP parser");
+			}
 		}
 	}
 
@@ -361,11 +378,13 @@ public class HttpProxyServer extends AsyncTcpServer implements ParserCallbacks {
 			AsyncTcpConnectionEndpoint anotherEndpoint = context.getOpposingEndpoint(endpoint);
 			if (anotherEndpoint != null && anotherEndpoint.equals(context.getLocalEndpoint())) {
 				if (t instanceof TimeoutException) {
-					HttpMessage response = createGatewayTimeoutResponse();
-					sendResponse(anotherEndpoint, response, null);
+					try (HttpMessage response = createGatewayTimeoutResponse()) {
+						sendResponse(anotherEndpoint, response, null);
+					}
 				} else if (context.isHttpConnectMode()) {
-					HttpMessage response = createErrorResponse(503, "NativeConnection failed", t);
-					sendResponse(anotherEndpoint, response, null);
+					try (HttpMessage response = createErrorResponse(503, "NativeConnection failed", t)) {
+						sendResponse(anotherEndpoint, response, null);
+					}
 				}
 			}
 		}

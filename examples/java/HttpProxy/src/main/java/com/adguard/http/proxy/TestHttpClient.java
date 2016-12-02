@@ -43,8 +43,7 @@ public class TestHttpClient {
 			buf.flip();
 			byte[] bytes = bufToBytes(buf);
 			log.info("received:\n" + new String(bytes, Charset.forName("ascii")));
-			r = parser.input(parserConnection, Direction.IN, bytes);
-			log.info("result: " + r);
+			parser.input(parserConnection, Direction.IN, bytes);
 		}
 	}
 
@@ -61,13 +60,13 @@ public class TestHttpClient {
 	}
 
 	private static class HttpClientCallbacks implements ParserCallbacks {
-		public void onHttpRequestReceived(long id, HttpMessage header) {
+		public void onHttpRequestReceived(long id, HttpMessage message) {
 			log.info("onHttpRequestReceived");
 		}
 
-		public ContentEncoding onHttpRequestBodyStarted(long id) {
+		public boolean onHttpRequestBodyStarted(long id) {
 			log.info("onHttpRequestBodyStarted");
-			return ContentEncoding.IDENTITY;
+			return false;
 		}
 
 		public void onHttpRequestBodyData(long id, byte[] data) {
@@ -78,13 +77,13 @@ public class TestHttpClient {
 			log.info("onHttpRequestBodyFinished");
 		}
 
-		public void onHttpResponseReceived(long id, HttpMessage header) {
-			log.info("onHttpResponseReceived:\n" + header.toString());
+		public void onHttpResponseReceived(long id, HttpMessage message) {
+			log.info("onHttpResponseReceived:\n" + message.toString());
 		}
 
-		public ContentEncoding onHttpResponseBodyStarted(long id) {
+		public boolean onHttpResponseBodyStarted(long id) {
 			log.info("onHttpResponseBodyStarted");
-			return ContentEncoding.IDENTITY;
+			return false;
 		}
 
 		public void onHttpResponseBodyData(long id, byte[] data) {
@@ -93,11 +92,6 @@ public class TestHttpClient {
 
 		public void onHttpResponseBodyFinished(long id) {
 			log.info("onHttpResponseBodyFinished");
-		}
-
-		@Override
-		public void onParseError(long id, Direction direction, int errorType, String message) {
-			log.info("onParseError");
 		}
 	}
 

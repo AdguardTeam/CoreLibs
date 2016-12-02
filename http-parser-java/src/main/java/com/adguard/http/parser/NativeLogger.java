@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Created by s.fionov on 29.11.16.
  */
-public class NativeLogger implements Closeable, AutoCloseable {
+public class NativeLogger implements Closeable {
 
 	public enum LogLevel {
 		ERROR(0),

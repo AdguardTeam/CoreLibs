@@ -4,6 +4,7 @@ import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.net.InetSocketAddress;
@@ -20,7 +21,7 @@ import java.util.concurrent.TimeoutException;
 /**
  * Created by s.fionov on 14.11.16.
  */
-class AsyncTcpConnectionEndpoint {
+class AsyncTcpConnectionEndpoint implements Closeable {
 
 	private static final Logger log = LoggerFactory.getLogger(AsyncTcpConnectionEndpoint.class);
 	private static final int MAX_OUTBOUND_CHUNKS = 3000;

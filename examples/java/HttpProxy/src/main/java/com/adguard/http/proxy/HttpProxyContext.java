@@ -175,14 +175,14 @@ public class HttpProxyContext {
 
 	private void resetRequest() {
 		if (this.request != null) {
-			this.request.free();
+			this.request.close();
 			this.request = null;
 		}
 	}
 
 	private void resetResponse() {
 		if (this.response != null) {
-			this.response.free();
+			this.response.close();
 			this.response = null;
 		}
 	}

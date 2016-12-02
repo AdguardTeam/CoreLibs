@@ -1,11 +1,12 @@
 package com.adguard.http.parser;
 
+import java.io.Closeable;
 import java.util.Map;
 
 /**
  * Created by s.fionov on 11.11.16.
  */
-public class HttpMessage {
+public class HttpMessage implements Closeable {
 
 	private long nativePtr;
 
@@ -13,8 +14,8 @@ public class HttpMessage {
 		this.nativePtr = nativePtr;
 	}
 
-	public HttpMessage() {
-		this.nativePtr = createHttpMessage();
+	public static HttpMessage create() {
+		return new HttpMessage(createHttpMessage());
 	}
 
 	private static native long createHttpMessage();
@@ -113,13 +114,15 @@ public class HttpMessage {
 
 	private static native long clone(long nativePtr);
 
-	public HttpMessage cloneHeader() {
+	@Override
+	public HttpMessage clone() {
 		return new HttpMessage(clone(nativePtr));
 	}
 
 	private static native void free(long nativePtr);
 
-	public void free() {
+	@Override
+	public void close() {
 		free(nativePtr);
 	}
 
