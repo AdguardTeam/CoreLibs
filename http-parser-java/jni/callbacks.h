@@ -1,5 +1,5 @@
 //
-// Created by sw on 02.12.16.
+// Created by s.fionov on 02.12.16.
 //
 
 #ifndef JNI_CALLBACKS_H

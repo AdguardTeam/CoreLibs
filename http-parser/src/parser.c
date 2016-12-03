@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 /*
  *  HTTP parser internals.
  *  Based on http parser API from Node.js project. 
@@ -13,6 +12,9 @@
 #include "logger.h"
 
 #include "../zlib/zlib.h"
+
+#define PARSER_LOG(args...) logger_log(parser_ctx->log, args)
+#define CTX_LOG(args...) logger_log(context->parser_ctx->log, args)
 
 /**
  * Create HTTP message
@@ -74,7 +76,6 @@ static inline void append_chars(char **dst, const char *src, size_t len) {
         *dst = malloc(len + 1);
         old_len = 0;
     } else {
-        // TODO: this is not correct: store length since http body can contain null bytes.
         old_len = strlen(*dst);
         *dst = realloc(*dst, old_len + len + 1);
     }
@@ -271,38 +272,38 @@ static connection_context *context_by_id_remove(parser_context *parser_ctx, conn
  */
 int http_parser_on_message_begin(http_parser *parser) {
     connection_context *context = CONTEXT(parser);
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_message_begin(parser=%p)", parser);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_message_begin(parser=%p)", parser);
     create_http_message(&context->message);
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_message_begin() returned %d", 0);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_message_begin() returned %d", 0);
     return 0;
 }
 
 int http_parser_on_url(http_parser *parser, const char *at, size_t length) {
     connection_context *context = CONTEXT(parser);
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_url(parser=%p, at=%.*s)", parser, (int) length, at);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_url(parser=%p, at=%.*s)", parser, (int) length, at);
     http_message *message = context->message;
     if (at != NULL && length > 0) {
         append_chars(&message->url, at, length);
     }
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_url() returned %d", 0);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_url() returned %d", 0);
     return 0;
 }
 
 int http_parser_on_status(http_parser *parser, const char *at, size_t length) {
     connection_context *context = CONTEXT(parser);
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_status(parser=%p, at=%.*s)", parser, (int) length, at);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_status(parser=%p, at=%.*s)", parser, (int) length, at);
     http_message *message = context->message;
     if (at != NULL && length > 0) {
         append_chars(&message->status, at, length);
         message->status_code = parser->status_code;
     }
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_status() returned %d", 0);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_status() returned %d", 0);
     return 0;
 }
 
 int http_parser_on_header_field(http_parser *parser, const char *at, size_t length) {
     connection_context *context = CONTEXT(parser);
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_header_field(parser=%p, at=%.*s)", parser, (int) length, at);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_header_field(parser=%p, at=%.*s)", parser, (int) length, at);
     http_message *message = context->message;
     if (at != NULL && length > 0) {
         if (!context->in_field) {
@@ -311,13 +312,13 @@ int http_parser_on_header_field(http_parser *parser, const char *at, size_t leng
         }
         append_chars(&message->fields[message->field_count - 1].name, at, length);
     }
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_header_field() returned %d", 0);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_header_field() returned %d", 0);
     return 0;
 }
 
 int http_parser_on_header_value(http_parser *parser, const char *at, size_t length) {
     connection_context *context = CONTEXT(parser);
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_header_value(parser=%p, at=%.*s)", parser, (int) length, at);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_header_value(parser=%p, at=%.*s)", parser, (int) length, at);
     http_message *message = context->message;
     context->in_field = 0;
     if (at != NULL && length > 0) {
@@ -325,18 +326,20 @@ int http_parser_on_header_value(http_parser *parser, const char *at, size_t leng
     } else {
         message->fields[message->field_count - 1].value = calloc(1, 1);
     }
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_header_value() returned %d", 0);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_header_value() returned %d", 0);
     return 0;
 }
 
 int http_parser_on_headers_complete(http_parser *parser) {
     connection_context *context = CONTEXT(parser);
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_headers_complete(parser=%p)", parser);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_headers_complete(parser=%p)", parser);
     http_message *message = context->message;
+    const char *method;
     int skip = 0;
     switch (parser->type) {
         case HTTP_REQUEST:
-            asprintf(&message->method, "%s", http_method_str(parser->method));
+            method = http_method_str(parser->method);
+            set_chars(&message->method, method, strlen(method));
             skip = context->callbacks->http_request_received(context, message);
             break;
         case HTTP_RESPONSE:
@@ -346,13 +349,13 @@ int http_parser_on_headers_complete(http_parser *parser) {
             break;
     }
 
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_headers_complete() returned %d", skip);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_headers_complete() returned %d", skip);
     return skip;
 }
 
 int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
     connection_context *context = CONTEXT(parser);
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_body(parser=%p, length=%d)", parser, (int) length);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_body(parser=%p, length=%d)", parser, (int) length);
     context->have_body = 1;
     int (*body_started)(connection_context *);
     body_data_callback body_data;
@@ -395,7 +398,7 @@ int http_parser_on_body(http_parser *parser, const char *at, size_t length) {
     }
 
     out:
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_body() returned %d", r);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_body() returned %d", r);
     context->body_callback_error = r;
     return r;
 }
@@ -409,7 +412,7 @@ static void set_error(connection_context *context, const char *msg) {
  * @param context Connection context
  */
 static int message_inflate_init(connection_context *context) {
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "message_inflate_init()");
+    CTX_LOG(LOG_LEVEL_TRACE, "message_inflate_init()");
     context->content_encoding = get_content_encoding(context);
     if (!context->need_decode || context->content_encoding == CONTENT_ENCODING_IDENTITY) {
         // Uncompressed
@@ -437,7 +440,7 @@ static int message_inflate_init(connection_context *context) {
             break;
     }
 
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "message_inflate_init() returned %d", r);
+    CTX_LOG(LOG_LEVEL_TRACE, "message_inflate_init() returned %d", r);
     return r;
 }
 
@@ -464,7 +467,7 @@ static content_encoding_t get_content_encoding(connection_context *context) {
  * @return 0 if data is successfully decompressed, 1 in case of error
  */
 static int message_inflate(connection_context *context, const char *data, size_t length, body_data_callback body_data) {
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "message_inflate(data=%p, length=%d)", data, (int) length);
+    CTX_LOG(LOG_LEVEL_TRACE, "message_inflate(data=%p, length=%d)", data, (int) length);
     int result;
     int r = 0;
 
@@ -521,7 +524,7 @@ static int message_inflate(connection_context *context, const char *data, size_t
     }
 
 finish:
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "message_inflate() returned %d", r);
+    CTX_LOG(LOG_LEVEL_TRACE, "message_inflate() returned %d", r);
     return r;
 }
 
@@ -540,7 +543,7 @@ static int message_inflate_end(connection_context *context) {
 
 int http_parser_on_message_complete(http_parser *parser) {
     connection_context *context = CONTEXT(parser);
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_message_complete(parser=%p)", parser);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_message_complete(parser=%p)", parser);
     http_message *message = context->message;
     if (context->have_body) {
         switch (parser->type) {
@@ -557,7 +560,7 @@ int http_parser_on_message_complete(http_parser *parser) {
 
     parser_reset(context);
 
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "http_parser_on_message_complete() returned %d", 0);
+    CTX_LOG(LOG_LEVEL_TRACE, "http_parser_on_message_complete() returned %d", 0);
     return 0;
 }
 
@@ -603,7 +606,7 @@ int parser_create(logger *log, parser_context **p_parser_ctx) {
 }
 
 int parser_destroy(parser_context *parser_ctx) {
-    logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "parser_destroy()");
+    PARSER_LOG(LOG_LEVEL_TRACE, "parser_destroy()");
     if (parser_ctx->context_by_id_hash_initialized) {
         for (int i = 0; i < HASH_SIZE; i++) {
             struct connection_context *context;
@@ -612,17 +615,17 @@ int parser_destroy(parser_context *parser_ctx) {
             }
         }
     }
-    logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "parser_destroy() finished.");
+    PARSER_LOG(LOG_LEVEL_TRACE, "parser_destroy() finished.");
 }
 
 int parser_connect(parser_context *parser_ctx, connection_id_t id, parser_callbacks *callbacks, connection_context **p_context) {
-    logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "parser_connect(id=%d, callbacks=%p, p_context=%p)", (int)id, callbacks, p_context);
+    PARSER_LOG(LOG_LEVEL_TRACE, "parser_connect(id=%d, callbacks=%p, p_context=%p)", (int)id, callbacks, p_context);
     connection_context *context = context_by_id_get(parser_ctx, id);
     int r = PARSER_OK;
 
     if (context != NULL) {
         // Already connected
-        logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "error: already connected!");
+        PARSER_LOG(LOG_LEVEL_TRACE, "error: already connected!");
         set_error(context, "Already connected");
         r = PARSER_ALREADY_CONNECTED_ERROR;
         goto finish;
@@ -643,7 +646,7 @@ int parser_connect(parser_context *parser_ctx, connection_id_t id, parser_callba
     parser_reset(context);
 
     if (p_context != NULL) {
-        logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "setting *p_context to %p", context);
+        PARSER_LOG(LOG_LEVEL_TRACE, "setting *p_context to %p", context);
         *p_context = context;
     } else {
         r = PARSER_NULL_POINTER_ERROR;
@@ -651,7 +654,7 @@ int parser_connect(parser_context *parser_ctx, connection_id_t id, parser_callba
     }
 
     finish:
-    logger_log(parser_ctx->log, LOG_LEVEL_TRACE, "parser_connect() returned %d", r);
+    PARSER_LOG(LOG_LEVEL_TRACE, "parser_connect() returned %d", r);
     return r;
 }
 
@@ -673,14 +676,14 @@ void parser_reset(connection_context *context) {
 }
 
 int parser_disconnect(connection_context *context, transfer_direction_t direction) {
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "parser_disconnect(context=%p, direction=%d)", context, (int) direction);
+    CTX_LOG(LOG_LEVEL_TRACE, "parser_disconnect(context=%p, direction=%d)", context, (int) direction);
     if (direction == DIRECTION_OUT) {
         if (context->parser->type == HTTP_RESPONSE) {
             message_inflate_end(context);
             http_parser_init(context->parser, HTTP_REQUEST);
         }
     }
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "parser_disconnect() returned %d", 0);
+    CTX_LOG(LOG_LEVEL_TRACE, "parser_disconnect() returned %d", 0);
     return 0;
 }
 
@@ -688,7 +691,7 @@ int parser_disconnect(connection_context *context, transfer_direction_t directio
 
 int parser_input(connection_context *context, transfer_direction_t direction, const char *data,
           size_t length) {
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "parser_input(context=%p, direction=%d, len=%d)", context, (int) direction, (int) length);
+    CTX_LOG(LOG_LEVEL_TRACE, "parser_input(context=%p, direction=%d, len=%d)", context, (int) direction, (int) length);
     // TODO: this is wrong, null bytes are allowed in content
     context->done = 0;
 
@@ -706,7 +709,7 @@ int parser_input(connection_context *context, transfer_direction_t direction, co
             enum http_errno http_parser_errno = HTTP_PARSER_ERRNO(context->parser);
             if (http_parser_errno != HPE_CB_body) {
                 // If body data callback fails, then get saved error from structure, don't overwrite
-                set_error(context, http_errno_name(http_parser_errno));
+                set_error(context, http_errno_description(http_parser_errno));
                 r = PARSER_HTTP_PARSE_ERROR;
             } else {
                 r = context->body_callback_error;
@@ -723,7 +726,7 @@ int parser_input(connection_context *context, transfer_direction_t direction, co
     }
 
     finish:
-    logger_log(context->parser_ctx->log, LOG_LEVEL_TRACE, "parser_input() returned %d", r);
+    CTX_LOG(LOG_LEVEL_TRACE, "parser_input() returned %d", r);
     return r;
 }
 
@@ -863,7 +866,7 @@ int http_message_del_header_field(http_message *message,
 
 char *http_message_raw(const http_message *message, size_t *p_length) {
     char *out_buffer;
-    int length, line_length = 0;
+    size_t length, line_length = 0;
 
     if (message == NULL) return NULL;
 
