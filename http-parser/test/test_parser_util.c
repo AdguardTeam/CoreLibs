@@ -1,17 +1,14 @@
 //
 // Parser utility methods test
-// Created by sw on 01.12.16.
+// Created by s.fionov on 01.12.16.
 //
 
 #include <assert.h>
 #include <stdio.h>
-#include <signal.h>
 #include <stdlib.h>
-#include <setjmp.h>
 #include <memory.h>
-#include <unistd.h>
 #include <limits.h>
-#include <fcntl.h>
+
 #include "parser.h"
 
 #define NONEMPTY_FIELD_NAME "Non-Empty-Field"

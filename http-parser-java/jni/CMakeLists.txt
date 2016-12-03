@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 11)
 add_subdirectory(../../http-parser ${CMAKE_CURRENT_BINARY_DIR}/http-parser)
 
 find_package(JNI REQUIRED)
-include_directories(${JAVA_INCLUDE_PATH})
+include_directories(${JAVA_INCLUDE_PATH} ${JAVA_INCLUDE_PATH2})
 
 set(SOURCE_FILES
         com_adguard_http_parser_HttpMessage.h

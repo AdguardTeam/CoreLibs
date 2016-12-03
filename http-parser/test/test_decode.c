@@ -1,18 +1,27 @@
+#define _GNU_SOURCE
+
 #include <assert.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <memory.h>
 #include <stdlib.h>
-#include <fcntl.h>
-#include "../src/logger.h"
-#include "../src/parser.h"
+
+#include "logger.h"
+#include "parser.h"
 
 #define DECODE 1
 
-const char *current_file;
-char *outbuf;
-int outpos;
-int finished;
+struct process_context {
+    char *buf;
+    size_t pos;
+    int finished;
+} process_context;
+
+struct test_file {
+    char *name;
+    char *contents;
+    size_t size;
+};
 
 int http_request_received(connection_context *context, void *message) {
     return 0;
@@ -39,13 +48,13 @@ int http_response_body_started(connection_context *context) {
 
 void http_response_body_data(connection_context *context, const char *data, size_t length) {
     fputc('.', stderr);
-    memcpy(outbuf + outpos, data, length);
-    outpos += length;
+    memcpy(process_context.buf + process_context.pos, data, length);
+    process_context.pos += length;
 }
 
 void http_response_body_finished(connection_context *context) {
     fputc(']', stderr);
-    finished = 1;
+    process_context.finished = 1;
 }
 
 parser_callbacks cbs = {
@@ -59,52 +68,53 @@ parser_callbacks cbs = {
     .http_response_body_finished = http_response_body_finished
 };
 
-char *license_txt;
-int license_txt_len;
-char *license_txt_http_gzip;
-int license_txt_http_gzip_len;
-char *license_txt_http_gzip_chunked;
-int license_txt_http_gzip_chunked_len;
+struct test_file license_txt;
+struct test_file license_txt_http_gzip;
+struct test_file license_txt_http_gzip_chunked;
 
-void prepare(char *file_name, char **buf, int *len) {
+void prepare(char *file_name, struct test_file *test_file) {
     fprintf(stderr, "Reading %s... ", file_name);
     FILE *file = fopen(file_name, "r");
     assert (file != NULL);
     fseek(file, 0L, SEEK_END);
-    *len = (int) ftell(file);
+    test_file->size = (size_t) ftell(file);
     fseek(file, 0L, SEEK_SET);
-    *buf = malloc(*len);
-    char *pos = *buf;
-    int r;
+    test_file->contents = malloc(test_file->size);
+    char *pos = test_file->contents;
+    size_t r;
     while ((r = fread(pos, 1, 4096, file)) > 0) {
         pos += r;
     }
-    assert ((pos - *buf) == *len);
-    fprintf(stderr, "%d bytes read.\n", *len);
+    size_t total_read = pos - test_file->contents;
+    fprintf(stderr, "%ld bytes read.\n", total_read);
+    assert (total_read == test_file->size);
+    asprintf(&test_file->name, "%s", file_name);
 }
 
-void process(connection_context *cctx, char *file_name, char *buf, int len, char *uncompressed_buf, int uncompressed_len) {
-    fprintf(stderr, "Processing %s: ", file_name);
-    outbuf = malloc(uncompressed_len);
-    outpos = 0;
-    finished = 0;
+void process(connection_context *cctx, struct test_file *file, struct test_file *uncompressed_file) {
+    fprintf(stderr, "Processing %s: ", file->name);
+    process_context.buf = malloc(uncompressed_file->size);
+    process_context.pos = 0;
+    process_context.finished = 0;
     int r;
-    r = parser_input(cctx, DIRECTION_IN, buf, len);
+    r = parser_input(cctx, DIRECTION_IN, file->contents, file->size);
     fputc('\n', stderr);
     if (r != 0) {
         fprintf(stderr, "parser_input() returned non-zero status: %d\n", r);
         exit(1);
     }
-    // input is fully processed
-    assert (finished);
-    assert (outpos == uncompressed_len);
-    assert (!memcmp(outbuf, uncompressed_buf, uncompressed_len));
+    // Input is fully processed
+    assert (process_context.finished);
+    // Length is same
+    assert (process_context.pos == uncompressed_file->size);
+    // Contents match
+    assert (!memcmp(process_context.buf, uncompressed_file->contents, uncompressed_file->size));
 }
 
 int main(int argc, char **argv) {
-    prepare("data/LICENSE-2.0.txt", &license_txt, &license_txt_len);
-    prepare("data/LICENSE-2.0.txt-HTTP-gzip.bin", &license_txt_http_gzip, &license_txt_http_gzip_len);
-    prepare("data/LICENSE-2.0.txt-HTTP-gzip-chunked.bin", &license_txt_http_gzip_chunked, &license_txt_http_gzip_chunked_len);
+    prepare("data/LICENSE-2.0.txt", &license_txt);
+    prepare("data/LICENSE-2.0.txt-HTTP-gzip.bin", &license_txt_http_gzip);
+    prepare("data/LICENSE-2.0.txt-HTTP-gzip-chunked.bin", &license_txt_http_gzip_chunked);
 
     logger *log = logger_open(NULL, LOG_LEVEL_INFO, NULL, NULL);
     parser_context *pctx;
@@ -118,11 +128,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    process(cctx, "data/LICENSE-2.0.txt-HTTP-gzip.bin",
-            license_txt_http_gzip, license_txt_http_gzip_len,
-            license_txt, license_txt_len);
-    process(cctx, "data/LICENSE-2.0.txt-HTTP-gzip-chunked.bin",
-            license_txt_http_gzip_chunked, license_txt_http_gzip_chunked_len,
-            license_txt, license_txt_len);
+    process(cctx, &license_txt_http_gzip, &license_txt);
+    process(cctx, &license_txt_http_gzip_chunked, &license_txt);
     return 0;
 }

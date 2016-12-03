@@ -1,7 +1,7 @@
 #ifndef TEST_STREAMS_H
 #define TEST_STREAMS_H
 
-#include "../src/parser.h"
+#include "parser.h"
 
 #define HTTP_REQUEST_RECEIVED       (1 << 0)
 #define HTTP_REQUEST_BODY_STARTED   (1 << 1)

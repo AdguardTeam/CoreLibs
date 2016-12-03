@@ -3,9 +3,10 @@
 #include <stdio.h>
 #include <memory.h>
 #include <stdlib.h>
-#include <fcntl.h>
-#include "../src/logger.h"
-#include "../src/parser.h"
+
+#include "logger.h"
+#include "parser.h"
+
 #include "test_http_parser.h"
 
 int callbacks_mask;

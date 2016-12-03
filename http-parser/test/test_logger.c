@@ -1,5 +1,5 @@
 //
-// Created by sw on 25.11.16.
+// Created by s.fionov on 25.11.16.
 //
 
 #include <stdio.h>
@@ -7,7 +7,8 @@
 #include <assert.h>
 #include <memory.h>
 #include <unistd.h>
-#include "../src/logger.h"
+
+#include "logger.h"
 
 int main() {
     // Generate output file name
