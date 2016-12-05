@@ -16,7 +16,7 @@ static void processError(JNIEnv *env, int returnCode, const char *message);
  * Invoke parser_connect(), process errors and return the native pointer to connection context
  * @param env JNI env
  * @param cls NativeParser class
- * @param parserNativePtr Pointer to parser context
+ * @param parserNativePtr Pointer to parser context (from NativeParser object)
  * @param id Connection id
  * @param callbacks NativeParser$Callbacks object
  * @return Pointer to connection context
@@ -41,16 +41,28 @@ jlong Java_com_adguard_http_parser_NativeParser_connect(JNIEnv *env, jclass cls,
     return (jlong) connection_ctx;
 }
 
+/**
+ * Tells parser that one of sides of connection was disconnected
+ * @param env JNI env
+ * @param cls NativeParser class
+ * @param connectionPtr Pointer to connection context (from NativeConnection object)
+ * @param direction Transfer direction
+ */
 void Java_com_adguard_http_parser_NativeParser_disconnect0(JNIEnv *env, jclass cls, jlong connectionPtr,
                                                           jint direction) {
     connection_context *context = (connection_context *) connectionPtr;
     int r = parser_disconnect(context, (transfer_direction_t) direction);
-    if (direction == DIRECTION_OUT) {
-        // delete context;
-    }
     processError(env, r, context);
 }
 
+/**
+ * Processes input from local/remote side
+ * @param env JNI env
+ * @param cls NativeParser class
+ * @param connectionPtr Pointer to connection context (from NativeConnection object)
+ * @param direction Transfer direction
+ * @param bytes Input data
+ */
 void Java_com_adguard_http_parser_NativeParser_input0(JNIEnv *env, jclass cls, jlong connectionPtr, jint direction,
                                                      jbyteArray bytes) {
     connection_context *context = (connection_context *) connectionPtr;
@@ -61,6 +73,12 @@ void Java_com_adguard_http_parser_NativeParser_input0(JNIEnv *env, jclass cls, j
     processError(env, r, context);
 }
 
+/**
+ * Closes connection, tell parser to free corresponding data structures
+ * @param env JNI env
+ * @param cls NativeParser class
+ * @param connectionPtr Pointer to connection context (from NativeConnection object)
+ */
 void Java_com_adguard_http_parser_NativeParser_closeConnection(JNIEnv *env, jclass cls, jlong connectionPtr) {
     connection_context *context = (connection_context *) connectionPtr;
     int r = parser_connection_close(context);
@@ -71,11 +89,26 @@ void Java_com_adguard_http_parser_NativeParser_closeConnection(JNIEnv *env, jcla
     delete Callbacks::get(context);
 }
 
+/**
+ * Get connection id by N
+ * @param env JNI env
+ * @param cls NativeParser class
+ * @param connectionPtr Pointer to connection context (from NativeConnection object)
+ * @return Connection id
+ */
 jlong Java_com_adguard_http_parser_NativeParser_getConnectionId(JNIEnv *env, jclass cls, jlong connectionPtr) {
     connection_context *context = (connection_context *) connectionPtr;
     return (jlong) connection_get_id(context);
 }
 
+/**
+ * NativeParser constructor.
+ * Allocate memory and store pointer in pointer field
+ * @param env JNI env
+ * @param cls NativeParser class
+ * @param parser NativeParser object
+ * @param loggerPtr Pointer to logger context (from NativeLogger object)
+ */
 void Java_com_adguard_http_parser_NativeParser_init(JNIEnv *env, jclass cls, jobject parser, jlong loggerPtr) {
     fprintf(stderr, "NativeParser.init()\n");
 
@@ -94,6 +127,12 @@ void Java_com_adguard_http_parser_NativeParser_init(JNIEnv *env, jclass cls, job
     }
 }
 
+/**
+ * Closes all parser connections. Additional work is done on Java side (closing every connection)
+ * @param env JNI env
+ * @param cls NativeParser class
+ * @param parserPtr Pointer to parser context (from NativeParser object)
+ */
 void Java_com_adguard_http_parser_NativeParser_closeParser(JNIEnv *env, jclass cls, jlong parserPtr) {
     parser_context *parser_ctx = (parser_context *) parserPtr;
     int r = parser_destroy(parser_ctx);
@@ -102,11 +141,27 @@ void Java_com_adguard_http_parser_NativeParser_closeParser(JNIEnv *env, jclass c
     }
 }
 
+// Utility methods
+
+/**
+ * Get URL from HttpMessage
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @return URL
+ */
 jstring Java_com_adguard_http_parser_HttpMessage_getUrl(JNIEnv * env, jclass cls, jlong nativePtr) {
     http_message *message = (http_message *) nativePtr;
     return env->NewStringUTF(message->url);
 }
 
+/**
+ * Set URL in HttpMessage
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @param value URL
+ */
 void Java_com_adguard_http_parser_HttpMessage_setUrl(JNIEnv *env, jclass cls, jlong nativePtr, jstring value) {
     http_message *message = (http_message *) nativePtr;
     jboolean isCopy;
@@ -118,21 +173,78 @@ void Java_com_adguard_http_parser_HttpMessage_setUrl(JNIEnv *env, jclass cls, jl
     }
 }
 
+/**
+ * Get HTTP status text from HttpMessage (if status text is set, HttpMessage is HTTP response, otherwise it is request)
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @return HTTP status text
+ */
 jstring Java_com_adguard_http_parser_HttpMessage_getStatus(JNIEnv *env, jclass cls, jlong nativePtr) {
     http_message *message = (http_message *) nativePtr;
     return env->NewStringUTF(message->status);
 }
 
+/**
+ *  Get HTTP status text from HttpMessage (if status text is set, HttpMessage is HTTP response, otherwise it is request)
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @param status HTTP status text
+ */
+void Java_com_adguard_http_parser_HttpMessage_setStatus(JNIEnv *env, jclass cls, jlong nativePtr, jstring status) {
+    http_message *message = (http_message *) nativePtr;
+    jboolean isCopy;
+    const char *statusText = env->GetStringUTFChars(status, &isCopy);
+    http_message_set_status(message, statusText, strlen(statusText));
+    if (isCopy) {
+        env->ReleaseStringUTFChars(status, statusText);
+    }
+}
+
+/**
+ * Get HTTP status code from HttpMessage
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @return HTTP status code
+ */
 jint Java_com_adguard_http_parser_HttpMessage_getStatusCode(JNIEnv *env, jclass cls, jlong nativePtr) {
     http_message *message = (http_message *) nativePtr;
     return message->status_code;
 }
 
+/**
+ * Set HTTP status code in HttpMessage
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @param code HTTP status code
+ */
+void Java_com_adguard_http_parser_HttpMessage_setStatusCode(JNIEnv *env, jclass cls, jlong nativePtr, jint code) {
+    http_message *message = (http_message *) nativePtr;
+    http_message_set_status_code(message, code);
+}
+
+/**
+ * Get HTTP method name from HttpMessage
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @return HTTP method name
+ */
 jstring Java_com_adguard_http_parser_HttpMessage_getMethod(JNIEnv *env, jclass cls, jlong nativePtr) {
     http_message *message = (http_message *) nativePtr;
     return env->NewStringUTF(message->method);
 }
 
+/**
+ * Get HTTP headers from HttpMessage
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @return List of pointers to http_header_field structure (wrapped into HttpHeaderField on Java side)
+ */
 jlongArray Java_com_adguard_http_parser_HttpMessage_getHeaders(JNIEnv *env, jclass cls, jlong nativePtr) {
     http_message *message = (http_message *) nativePtr;
     jlong nativePtrs[message->field_count];
@@ -146,6 +258,14 @@ jlongArray Java_com_adguard_http_parser_HttpMessage_getHeaders(JNIEnv *env, jcla
     return array;
 }
 
+/**
+ * Add new HTTP header to HttpMessage
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @param fieldName Field name
+ * @param value Field value
+ */
 void Java_com_adguard_http_parser_HttpMessage_addHeader(JNIEnv *env, jclass cls, jlong nativePtr, jstring fieldName, jstring value) {
     jboolean fieldCharsIsCopy;
     const char *fieldChars = env->GetStringUTFChars(fieldName, &fieldCharsIsCopy);
@@ -162,15 +282,69 @@ void Java_com_adguard_http_parser_HttpMessage_addHeader(JNIEnv *env, jclass cls,
     }
 }
 
+/**
+ * Remove HTTP header field with given name
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @param fieldName Name to field to delete
+ */
+void Java_com_adguard_http_parser_HttpMessage_removeHeader(JNIEnv *env, jclass cls, jlong nativePtr, jstring fieldName) {
+    http_message *message = (http_message *) nativePtr;
+    jboolean fieldCharsIsCopy;
+    const char *fieldChars = env->GetStringUTFChars(fieldName, &fieldCharsIsCopy);
+    http_message_del_header_field(message, fieldChars, strlen(fieldChars));
+    if (fieldCharsIsCopy) {
+        env->ReleaseStringUTFChars(fieldName, fieldChars);
+    }
+}
+
+/**
+ * Get field name from HttpHeaderField
+ * @param env JNI env
+ * @param cls HttpHeaderField class
+ * @param nativePtr Pointer to http_header_field structure (from HttpMessage$HttpheaderField)
+ * @return Field name
+ */
+jstring Java_com_adguard_http_parser_HttpMessage_00024HttpHeaderField_getKey(JNIEnv *env, jclass cls, jlong nativePtr) {
+    http_header_field *parameter = (http_header_field *) nativePtr;
+    return env->NewStringUTF(parameter->name);
+}
+
+/**
+ * Get field value from HttpHeaderField
+ * @param env JNI env
+ * @param cls HttpHeaderField class
+ * @param nativePtr Pointer to http_header_field structure (from HttpMessage$HttpheaderField)
+ * @return Field value
+ */
+jstring Java_com_adguard_http_parser_HttpMessage_00024HttpHeaderField_getValue(JNIEnv *env, jclass cls, jlong nativePtr) {
+    http_header_field *parameter = (http_header_field *) nativePtr;
+    return env->NewStringUTF(parameter->value);
+}
+
+/**
+ * Get HttpMessage serialized length
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @return Length of serialized HttpMessage
+ */
 jint Java_com_adguard_http_parser_HttpMessage_sizeBytes(JNIEnv *env, jclass cls, jlong nativePtr) {
     http_message *message = (http_message *) nativePtr;
     size_t length = 0;
     char *message_raw = http_message_raw(message, &length);
-
     free(message_raw);
     return (jint) length;
 }
 
+/**
+ * Serialize HttpMessage into correct HTTP request/response
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @return New byte array containing correct HTTP/1.1 request/response
+ */
 jbyteArray Java_com_adguard_http_parser_HttpMessage_getBytes__J(JNIEnv *env, jclass cls, jlong nativePtr) {
     http_message *message = (http_message *) nativePtr;
     size_t length = 0;
@@ -182,6 +356,13 @@ jbyteArray Java_com_adguard_http_parser_HttpMessage_getBytes__J(JNIEnv *env, jcl
     return arr;
 }
 
+/**
+ * Serialize HttpMessage into correct HTTP request/response and write it to the given byte array
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @param arr Byte array for response to write
+ */
 void Java_com_adguard_http_parser_HttpMessage_getBytes__J_3B(JNIEnv *env, jclass cls, jlong nativePtr, jbyteArray arr) {
     http_message *message = (http_message *) nativePtr;
     size_t length = 0;
@@ -191,62 +372,52 @@ void Java_com_adguard_http_parser_HttpMessage_getBytes__J_3B(JNIEnv *env, jclass
     free(message_raw);
 }
 
-void Java_com_adguard_http_parser_HttpMessage_removeHeader(JNIEnv *env, jclass cls, jlong nativePtr, jstring fieldName) {
-    http_message *message = (http_message *) nativePtr;
-    jboolean fieldCharsIsCopy;
-    const char *fieldChars = env->GetStringUTFChars(fieldName, &fieldCharsIsCopy);
-    http_message_del_header_field(message, fieldChars, strlen(fieldChars));
-    if (fieldCharsIsCopy) {
-        env->ReleaseStringUTFChars(fieldName, fieldChars);
-    }
-}
-
+/**
+ * Clone HttpMessage
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to http_message structure (from HttpMessage)
+ * @return Pointer to new http_message structure (wrapped into new HttpMessage on Java side)
+ */
 jlong Java_com_adguard_http_parser_HttpMessage_clone(JNIEnv *env, jclass cls, jlong nativePtr) {
     if (nativePtr == 0)
         return 0;
     return (jlong) http_message_clone((http_message *) nativePtr);
 }
 
+/**
+ * Create empty HttpMessage
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @return Pointer to new http_message structure (wrapped into new HttpMessage on Java side)
+ */
 jlong Java_com_adguard_http_parser_HttpMessage_createHttpMessage(JNIEnv *env, jclass cls) {
     http_message *message = (http_message *) malloc(sizeof(http_message));
     memset(message, 0, sizeof(http_message));
     return (jlong) message;
 }
 
-void Java_com_adguard_http_parser_HttpMessage_setStatusCode(JNIEnv *env, jclass cls, jlong nativePtr, jint code) {
-    http_message *message = (http_message *) nativePtr;
-    http_message_set_status_code(message, code);
-}
-
-void Java_com_adguard_http_parser_HttpMessage_setStatus(JNIEnv *env, jclass cls, jlong nativePtr, jstring status) {
-    http_message *message = (http_message *) nativePtr;
-    jboolean isCopy;
-    const char *statusText = env->GetStringUTFChars(status, &isCopy);
-    http_message_set_status(message, statusText, strlen(statusText));
-    if (isCopy) {
-        env->ReleaseStringUTFChars(status, statusText);
-    }
-}
-
+/**
+ * Free HttpMessage structure
+ * @param env JNI env
+ * @param cls HttpMessage class
+ * @param nativePtr Pointer to new http_message structure (from HttpMessage)
+ */
 void Java_com_adguard_http_parser_HttpMessage_free(JNIEnv *env, jclass cls, jlong nativePtr) {
     http_message *message = (http_message *) nativePtr;
     http_message_free(message);
 }
 
-jstring Java_com_adguard_http_parser_HttpMessage_00024HttpHeaderField_getKey(JNIEnv *env, jclass cls, jlong nativePtr) {
-    http_header_field *parameter = (http_header_field *) nativePtr;
-    return env->NewStringUTF(parameter->name);
-}
-
-jstring Java_com_adguard_http_parser_HttpMessage_00024HttpHeaderField_getValue(JNIEnv *env, jclass cls, jlong nativePtr) {
-    http_header_field *parameter = (http_header_field *) nativePtr;
-    return env->NewStringUTF(parameter->value);
-}
-
-
+/**
+ * Throws exception corresponding to error code
+ * @param env JNI env
+ * @param returnCode Error code
+ * @param context Connection context
+ */
 static void processError(JNIEnv *env, int returnCode, connection_context *context) {
     processError(env, returnCode, connection_get_error_message(context));
 }
+
 /**
  * Throws exception corresponding to error code
  * @param env JNI env
