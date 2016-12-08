@@ -22,3 +22,8 @@ set(SOURCE_FILES
 
 add_library(httpparser-jni SHARED ${SOURCE_FILES})
 target_link_libraries(httpparser-jni httpparser-c)
+if (APPLE)
+    set_property(TARGET httpparser-jni PROPERTY SUFFIX .jnilib)
+endif (APPLE)
+
+enable_testing()
