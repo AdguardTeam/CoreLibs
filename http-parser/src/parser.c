@@ -829,8 +829,7 @@ const char *http_message_get_header_field(const http_message *message, const cha
     return NULL;
 }
 
-int http_message_add_header_field(http_message *message,
-                                  const char *name, size_t length) {
+int http_message_add_header_field(http_message *message, const char *name, size_t length) {
     if (message == NULL || name == NULL || length == 0) return 1;
     for (int i = 0; i < message->field_count; i++) {
         if (strncasecmp(message->fields[i].name, name, length) == 0)
@@ -843,18 +842,15 @@ int http_message_add_header_field(http_message *message,
     return 0;
 }
 
-int http_message_del_header_field(http_message *message,
-                                  const char *name, size_t length) {
+int http_message_del_header_field(http_message *message, const char *name, size_t length) {
     if (message == NULL || name == NULL || length == 0) return 1;
     for (int i = 0; i < message->field_count; i++) {
         if (strncasecmp(message->fields[i].name, name, length) == 0) {
             free (message->fields[i].name);
             free (message->fields[i].value);
             for (int j = i + 1; j < message->field_count; j++) {
-                message->fields[j - 1].name =
-                    message->fields[j].name;
-                message->fields[j - 1].value =
-                    message->fields[j].value;
+                message->fields[j - 1].name = message->fields[j].name;
+                message->fields[j - 1].value = message->fields[j].value;
             }
             message->field_count--;
             message->fields = realloc(message->fields, message->field_count * sizeof(http_header_field));
@@ -873,7 +869,7 @@ char *http_message_raw(const http_message *message, size_t *p_length) {
     if (message->status && message->status_code) {
         length = strlen(HTTP_VERSION) + strlen(message->status) + 7;
         out_buffer = malloc(length + 1);
-        memset (out_buffer, 0, length + 1);
+        memset(out_buffer, 0, length + 1);
         snprintf(out_buffer, length + 1, "%s %u %s\r\n",
                  HTTP_VERSION, message->status_code,
                  message->status);
@@ -881,7 +877,7 @@ char *http_message_raw(const http_message *message, size_t *p_length) {
         length = strlen(HTTP_VERSION) + strlen(message->url) +
                  strlen(message->method) + 4;
         out_buffer = malloc(length + 1);
-        memset (out_buffer, 0, length + 1);
+        memset(out_buffer, 0, length + 1);
         snprintf(out_buffer, length + 1, "%s %s %s\r\n",
                  message->method, message->url, HTTP_VERSION);
     }
