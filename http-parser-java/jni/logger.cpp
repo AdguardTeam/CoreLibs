@@ -25,7 +25,11 @@ extern "C" {
 void NativeLogger_callback(logger *ctx, logger_log_level_t log_level, const char *thread_info, const char *message) {
     LoggerCtx *loggerCtx = (LoggerCtx *) ctx->attachment;
     JNIEnv *env;
+#ifdef ANDROID
+    if (loggerCtx->vm->AttachCurrentThread(&env, NULL) != JNI_OK) {
+#else
     if (loggerCtx->vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+#endif /* defined(ANDROID) */
         return;
     }
 

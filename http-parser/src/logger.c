@@ -2,19 +2,21 @@
 // Created by s.fionov on 25.11.16.
 //
 
-// for pthread_getname_np()
-#define _GNU_SOURCE
-
 #include <stdio.h>
 #include <errno.h>
 #include <memory.h>
 #include <unistd.h>
 #include <time.h>
 #include <pthread.h>
-#include <syscall.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include "logger.h"
+
+#if !defined(ANDROID)
+#include <syscall.h>
+#undef gettid
+#define gettid() syscall(SYS_gettid)
+#endif /* !defined(ANDROID) */
 
 #define TIME_FORMAT "%d.%m.%Y %H:%M:%S%z"
 
@@ -94,12 +96,8 @@ void logger_log(logger *ctx, logger_log_level_t log_level, const char *message, 
     if (ctx->callback_func && log_level <= ctx->log_level) {
         char fmt_message[256];
         vsnprintf(fmt_message, 256, message, args);
-        char thread_name[50];
         char thread_info[64];
-        if (pthread_getname_np(pthread_self(), thread_name, 50) == ERANGE) {
-            thread_name[0] = '\0';
-        }
-        snprintf(thread_info, 64, "%s[%ld]", thread_name, syscall(SYS_gettid));
+        snprintf(thread_info, 64, "[tid=%ld]", (long int) gettid());
         ctx->callback_func(ctx, log_level, thread_info, fmt_message);
     }
     va_end(args);

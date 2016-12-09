@@ -1,6 +1,8 @@
 #include <jni.h>
 #include "../../http-parser/src/parser.h"
 #include "callbacks.h"
+#include <string>
+#include <stdexcept>
 
 /**
  * Callbacks definitions
@@ -25,7 +27,11 @@ std::map<connection_context *, Callbacks *> Callbacks::callbacksMap;
  */
 static JNIEnv *getEnv(JavaVM *vm) {
     JNIEnv *env;
+#ifdef ANDROID
+    if (vm->AttachCurrentThread(&env, NULL) != JNI_OK) {
+#else
     if (vm->AttachCurrentThread((void **) &env, NULL) != JNI_OK) {
+#endif /* defined(ANDROID) */
         throw std::runtime_error("Can't attach to Java VM");
     }
     return env;
