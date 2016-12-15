@@ -281,7 +281,7 @@ class AsyncTcpConnectionEndpoint implements Closeable {
 		this.readTimeoutMs = seconds * 1000;
 	}
 
-	public long timeToTimeout() {
+	public long getTimeToTimeout() {
 		if (readTimeoutMs == 0) {
 			return Long.MAX_VALUE;
 		}

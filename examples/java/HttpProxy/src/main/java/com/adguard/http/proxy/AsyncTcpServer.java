@@ -100,7 +100,7 @@ public abstract class AsyncTcpServer implements AsyncTcpConnectionEndpoint.Endpo
 		long timeout = Long.MAX_VALUE;
 		for (SelectionKey key : selector.keys()) {
 			if (key.attachment() instanceof AsyncTcpConnectionEndpoint) {
-				long time = ((AsyncTcpConnectionEndpoint) key.attachment()).timeToTimeout();
+				long time = ((AsyncTcpConnectionEndpoint) key.attachment()).getTimeToTimeout();
 				if (time > 0) {
 					if (time < timeout) {
 						timeout = time;
