@@ -1,0 +1,63 @@
+.idea
+*.iml
+*.iws
+*.ipr
+*.ids
+
+target
+deploy
+
+target/
+build/
+*.class
+${prj.deploy.dir}/
+
+*.pydevproject
+.project
+.recommenders/**
+.recommenders
+.recommenders/**/*
+.metadata
+bin/**
+tmp/**
+tmp/**/*
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.classpath
+.settings/
+.loadpath
+
+# External tool builders
+.externalToolBuilders/
+
+# Locally stored "Eclipse launch configurations"
+*.launch
+
+# CDT-specific
+.cproject
+
+# PDT-specific
+.buildpath
+
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Thumbnails
+._*
+
+# Files that might appear on external disk
+.Spotlight-V100
+.Trashes
+*.log
+
+*.log.*
+
+# jni object files
+*.o
+*.so
+*.jnilib
