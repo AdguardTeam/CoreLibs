@@ -5,6 +5,7 @@ body:
   - type: markdown
     attributes:
       value: Thanks for taking the time to fill out this bug report!
+
   - type: checkboxes
     attributes:
       label: Please answer the following questions for yourself before submitting an issue
@@ -15,31 +16,43 @@ body:
           required: true
         - label: I checked to make sure that this issue has not already been filed
           required: true
+
   - type: input
     id: app_version
     attributes:
-      label: AdGuard version
-      description: What version of our application are you running?
-      placeholder: For example, 7.18.1
+      label: AdGuard Product & Version
+      description: What product from AdGuard do you use, and what version are you running?
+      placeholder: For example, AdGuard for Windows 8.0.1
     validations:
       required: true
+
   - type: input
     id: br_version
     attributes:
-      label: Browser version
-      description: What browser do you use?
-      placeholder: For example, Chrome 124
+      label: Browser Version
+      description: What browser do you use, and what version are you running?
+      placeholder: For example, Chrome 152
     validations:
-      required: false
+      required: true
 
   - type: input
     id: os_version
     attributes:
-      label: OS version
-      description: What operating system do you use?
-      placeholder: For example, Android 15
+      label: Operating System & Version
+      description: What operating system do you use, and what version are you running?
+      placeholder: For example, Windows 11 26H2 (Build 26300)​​
     validations:
       required: true
+
+  - type: input
+    id: customer_id
+    attributes:
+      label: Support Ticket ID
+      description: If you've already sent us a diagnostic report through the relavant AdGuard application, share the ticket ID number. You can find it in an auto-reply email from AdGuard support after sending a report.
+      placeholder: Enter a ticket ID
+    validations:
+      required: false
+
   - type: textarea
     id: what-happened
     attributes:
@@ -48,12 +61,12 @@ body:
       placeholder:
       value: |
         Steps to reproduce:
-        1.
-        2.
-        3.
+        1. 
+        2. 
+        3. 
     validations:
       required: true
-      
+
   - type: textarea
     id: how_it_should_be
     attributes:
@@ -61,7 +74,7 @@ body:
       placeholder: A clear and concise description of what you expected to happen.
     validations:
       required: false
-      
+
   - type: textarea
     id: how_it_is
     attributes:
@@ -69,25 +82,26 @@ body:
       placeholder: A clear description of what happened instead.
     validations:
       required: true
-      
+
   - type: textarea
     id: screens
     attributes:
       label: Screenshots
       description: |
-        If applicable add screenshots explaining your problem.
+        If applicable, add screenshots explaining your problem.
         You can drag and drop images or paste them from clipboard.
         Use `<details> </details>` tag to hide screenshots under the spoiler.
-      placeholder: If applicable add screenshots explaining your problem.
+      placeholder: If applicable, add screenshots explaining your problem.
       value: |
           <details><summary>Screenshot 1</summary>
-
-          <!-- paste screenshot here -->
-
+          <!-- Paste screenshot below. -->
+          
+          
+          
           </details>
     validations:
       required: false
-      
+
   - type: textarea
     id: additional
     attributes:

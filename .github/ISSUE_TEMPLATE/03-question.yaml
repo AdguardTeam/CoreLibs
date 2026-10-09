@@ -10,7 +10,8 @@ body:
     attributes:
       label: Please answer the following questions for yourself before submitting a question.
       options:
-        - label: I am running the latest version
+        - label: I am running the latest version of the AdGuard product I use
+          required: true
         - label: I checked the [knowledge base](https://adguard.com/kb/) and found no answer
           required: true
         - label: I checked to make sure that this issue has not already been filed
@@ -20,6 +21,6 @@ body:
     id: question
     attributes:
       label: Ask a question
-      placeholder: If you want to know more about how the app works.
+      placeholder: If you want to know more about the core AdGuard libraries.
     validations:
       required: true
